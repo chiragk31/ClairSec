@@ -7,21 +7,28 @@ import '../../providers/scans_provider.dart';
 import '../shared/page_header.dart';
 import '../shared/empty_state.dart';
 
-class ScansScreen extends StatelessWidget {
+class ScansScreen extends ConsumerWidget {
   const ScansScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
       backgroundColor: AppColors.background,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: const [
+        children: [
           PageHeader(
             title: 'Scans',
             subtitle: 'Security scan history and active sessions',
+            actions: [
+              IconButton(
+                onPressed: () => ref.invalidate(scansProvider),
+                icon: const Icon(Icons.refresh, size: 19),
+                tooltip: 'Refresh',
+              ),
+            ],
           ),
-          Expanded(
+          const Expanded(
             child: Padding(
               padding: EdgeInsets.all(24),
               child: _ScansContent(),

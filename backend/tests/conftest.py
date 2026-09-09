@@ -53,8 +53,28 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
             item.add_marker(skip_marker)
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _isolate_auth_token_path(tmp_path_factory):
+    """
+    Redirect the auth token file to a temporary path for the whole test session.
+
+    Without this, initialize_auth() writes to the real AUTH_TOKEN_PATH
+    (~/.clairsec/auth_token). Any running backend and any connected desktop
+    client then start failing with 401, because the file no longer matches the
+    token the live server generated at its own startup. Tests must never write
+    to the developer's real home directory.
+    """
+    from app.core.config import settings
+
+    original = settings.auth_token_path
+    token_dir = tmp_path_factory.mktemp("clairsec_auth")
+    settings.auth_token_path = str(token_dir / "auth_token")
+    yield
+    settings.auth_token_path = original
+
+
 @pytest.fixture(scope="session")
-def app():
+def app(_isolate_auth_token_path):
     """Create a FastAPI app instance with auth and database mock initialized."""
     from unittest.mock import AsyncMock, MagicMock
     from app.main import create_app

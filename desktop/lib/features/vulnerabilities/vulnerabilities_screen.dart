@@ -3,25 +3,36 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme/app_theme.dart';
 import '../../providers/findings_provider.dart';
+import '../../providers/scans_provider.dart';
 import '../shared/page_header.dart';
 import '../shared/empty_state.dart';
 import 'widgets/finding_list_tile.dart';
 
-class VulnerabilitiesScreen extends StatelessWidget {
+class VulnerabilitiesScreen extends ConsumerWidget {
   const VulnerabilitiesScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
       backgroundColor: AppColors.background,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: const [
+        children: [
           PageHeader(
             title: 'Vulnerabilities',
             subtitle: 'Confirmed findings across all scans',
+            actions: [
+              IconButton(
+                onPressed: () {
+                  ref.invalidate(scansProvider);
+                  ref.invalidate(allFindingsProvider);
+                },
+                icon: const Icon(Icons.refresh, size: 19),
+                tooltip: 'Refresh',
+              ),
+            ],
           ),
-          Expanded(child: _VulnerabilitiesContent()),
+          const Expanded(child: _VulnerabilitiesContent()),
         ],
       ),
     );

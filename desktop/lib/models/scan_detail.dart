@@ -130,4 +130,12 @@ class ScanDetailState {
 
   AgentCardState cardFor(AgentRole role) =>
       agentCards[role] ?? AgentCardState.idleFor(role);
+
+  /// True once no agent can still change state, so live polling can stop.
+  bool get isTerminal => agentCards.values.every(
+        (c) =>
+            c.status == AgentStatus.completed ||
+            c.status == AgentStatus.failed ||
+            c.status == AgentStatus.skipped,
+      );
 }

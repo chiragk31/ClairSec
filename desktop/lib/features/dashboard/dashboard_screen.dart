@@ -12,19 +12,30 @@ import '../shared/stat_card.dart';
 import '../shared/empty_state.dart';
 import '../vulnerabilities/widgets/finding_list_tile.dart';
 
-class DashboardScreen extends StatelessWidget {
+class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
       backgroundColor: AppColors.background,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const PageHeader(
+          PageHeader(
             title: 'Dashboard',
             subtitle: 'Overview of your security scan activity',
+            actions: [
+              IconButton(
+                onPressed: () {
+                  ref.invalidate(projectsProvider);
+                  ref.invalidate(scansProvider);
+                  ref.invalidate(allFindingsProvider);
+                },
+                icon: const Icon(Icons.refresh, size: 19),
+                tooltip: 'Refresh',
+              ),
+            ],
           ),
           Expanded(
             child: SingleChildScrollView(

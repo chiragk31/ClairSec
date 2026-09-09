@@ -59,8 +59,9 @@ Verified by running it, not by assertion:
    Attacker executes controlled tests through a scope-locked HTTP client; deterministic oracles
    adjudicate; Evaluator independently confirms from evidence alone; Fixer generates unified
    diffs; Verifier rebuilds and re-tests.
-4. **Results in the UI** — Dashboard counters, scan list, findings with severity/CWE/status, and
-   a Fix Review screen showing the actual colour-coded diff.
+4. **Results in the UI** — Dashboard counters, scan list, findings with severity/CWE/status, a
+   Fix Review screen showing the actual colour-coded diff, per-scan report summaries, and
+   confirmed findings listed inline on the scan view. Every data screen has a refresh control.
 
 ### Measured result on the benchmark
 
@@ -176,16 +177,27 @@ flutter analyze && flutter test
 
 ## 7. Known Issues
 
-1. **`tests/conftest.py` overwrites the real auth token.** `initialize_auth()` is called without
-   overriding `auth_token_path`, so every `pytest` run rewrites `~/.clairsec/auth_token` and
-   401s any running backend and connected client. Do not run tests while the app is open. Fix:
-   override the path to a tmp path in the fixture.
-2. **No live event streaming.** The scan detail screen derives agent card state from the
-   backend's reported stage by polling. WebSocket streaming is Phase 9.
-3. **`GET /api/scans/{id}/findings` fans out client-side.** The Vulnerabilities screen requests
+### Fixed
+
+1. **Auth token clobbered by the test suite** — `tests/conftest.py` called `initialize_auth()`
+   against the real `~/.clairsec/auth_token`, so any `pytest` run 401'd a running backend and
+   its connected client. A session-scoped autouse fixture now redirects `auth_token_path` to a
+   temporary directory for the whole test session.
+2. **Empty source locations on findings** — findings are produced from runtime evidence and
+   carry no source position. Where the Fixer generated a patch, locations are now derived from
+   the diff hunk headers, so the finding detail shows the affected file and line range.
+3. **Re-isolation wedged a project** — pressing Isolate a second time failed with "scan
+   workspace already exists" and left the project permanently in `import_failed`. Re-isolation
+   now cleans up any stale workspace first and is idempotent.
+
+### Outstanding
+
+1. **No live event streaming.** The scan detail screen derives agent card state from the
+   backend's reported stage, refreshed manually. WebSocket streaming is Phase 9.
+2. **`GET /api/scans/{id}/findings` fans out client-side.** The Vulnerabilities screen requests
    findings per scan. Fine at demo scale; needs a dedicated endpoint if scan counts grow.
-4. **Source locations are empty** on findings — the Fixer maps locations internally but they are
-   not currently propagated to the findings response.
+3. **Report export is summary-only.** The Reports screen presents per-scan metrics and findings;
+   document export (PDF/HTML) is Phase 10.
 
 ---
 

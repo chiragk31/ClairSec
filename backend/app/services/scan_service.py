@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timezone
 import logging
+import re
 from pathlib import Path
 from typing import Any
 import uuid
@@ -41,6 +42,44 @@ from app.targets.handle import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Unified diff hunk header, e.g. "@@ -126,6 +126,8 @@"
+_HUNK_RE = re.compile(r"^@@\s*-(\d+)(?:,(\d+))?\s+\+\d+(?:,\d+)?\s*@@")
+
+
+def _locations_from_patch(patch: Any) -> list[dict[str, Any]]:
+    """
+    Derive source locations from a patch's diff hunk headers.
+
+    Findings are produced from runtime evidence and carry no source position.
+    The Fixer's diff, however, states exactly which original lines were
+    touched, so the first hunk of each file gives a usable location to show
+    in the UI. Returns an empty list if nothing can be parsed — never raises,
+    since a missing location must not break the findings response.
+    """
+    locations: list[dict[str, Any]] = []
+    try:
+        for file_diff in getattr(patch, "files", []) or []:
+            path = getattr(file_diff, "path", "") or ""
+            diff_text = getattr(file_diff, "diff", "") or ""
+            for line in diff_text.splitlines():
+                match = _HUNK_RE.match(line.strip())
+                if not match:
+                    continue
+                start = int(match.group(1))
+                span = int(match.group(2)) if match.group(2) else 1
+                locations.append(
+                    {
+                        "file": str(path),
+                        "lineStart": start,
+                        "lineEnd": start + max(span - 1, 0),
+                    }
+                )
+                break  # first hunk per file is enough to locate the change
+    except Exception:  # noqa: BLE001 - display detail only, never fatal
+        logger.debug("Could not derive source locations from patch", exc_info=True)
+        return []
+    return locations
 
 
 class ScanService:
@@ -361,6 +400,13 @@ class ScanService:
                     "lineStart": int(line_start),
                     "lineEnd": int(line_end),
                 })
+
+            # The Attacker/Evaluator work from runtime evidence and therefore do
+            # not know source positions. Where the Fixer produced a patch, the
+            # diff hunk headers tell us exactly which lines were involved, so
+            # derive the location from there rather than showing nothing.
+            if not locations and patch:
+                locations = _locations_from_patch(patch)
 
             cwe_str = f.cwe[0] if f.cwe else ""
             severity_str = f.cvss.severity.value.lower() if hasattr(f.cvss.severity, "value") else str(f.cvss.severity).lower()
