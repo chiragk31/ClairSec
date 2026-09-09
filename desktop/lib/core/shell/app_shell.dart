@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../routing/app_router.dart';
 import '../theme/app_theme.dart';
 import '../../providers/projects_provider.dart';
+import '../../services/health_service.dart';
 
 /// Navigation destination model for the left rail.
 class _NavItem {
@@ -256,11 +257,23 @@ class _NavTileState extends State<_NavTile> {
 class _BackendStatusIndicator extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final healthAsync = ref.watch(healthProvider);
-    
-    final isConnected = healthAsync.value ?? false;
-    final color = isConnected ? SeverityColors.success : AppColors.textDisabled;
-    final text = isConnected ? 'Backend: connected' : 'Backend: disconnected';
+    final statusAsync = ref.watch(backendStatusProvider);
+    final status = statusAsync.value ?? BackendStatus.disconnected;
+
+    final Color color;
+    final String text;
+
+    switch (status) {
+      case BackendStatus.connected:
+        color = SeverityColors.success;
+        text = 'Backend: connected';
+      case BackendStatus.tokenMissing:
+        color = SeverityColors.warning;
+        text = 'Backend: token missing';
+      case BackendStatus.disconnected:
+        color = AppColors.textDisabled;
+        text = 'Backend: disconnected';
+    }
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
@@ -280,7 +293,11 @@ class _BackendStatusIndicator extends ConsumerWidget {
               text,
               style: AppTheme.dark.textTheme.labelSmall?.copyWith(
                 fontSize: 10,
-                color: isConnected ? AppColors.textSecondary : AppColors.textDisabled,
+                color: status == BackendStatus.connected
+                    ? AppColors.textSecondary
+                    : (status == BackendStatus.tokenMissing
+                        ? SeverityColors.warning
+                        : AppColors.textDisabled),
               ),
               overflow: TextOverflow.ellipsis,
             ),

@@ -6,6 +6,7 @@ import '../../models/project.dart';
 import '../../providers/projects_provider.dart';
 import '../shared/page_header.dart';
 import '../shared/empty_state.dart';
+import 'widgets/isolation_controls.dart';
 
 class ProjectsScreen extends ConsumerWidget {
   const ProjectsScreen({super.key});
@@ -80,7 +81,7 @@ class ProjectsScreen extends ConsumerWidget {
                 return ListView.separated(
                   padding: const EdgeInsets.all(24),
                   itemCount: projects.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 16),
+                  separatorBuilder: (_, _) => const SizedBox(height: 16),
                   itemBuilder: (context, index) => _ProjectCard(project: projects[index]),
                 );
               },
@@ -195,6 +196,15 @@ class _ProjectCard extends StatelessWidget {
               ),
             ],
           ),
+          if (isValid) ...[
+            const SizedBox(height: 16),
+            const Divider(height: 1),
+            const SizedBox(height: 12),
+            IsolationControls(
+              projectId: project.id,
+              isolationReady: project.isolationReady,
+            ),
+          ],
           if (!isValid && project.validationErrors.isNotEmpty) ...[
             const SizedBox(height: 16),
             Container(

@@ -41,3 +41,8 @@ final healthProvider = FutureProvider<bool>((ref) async {
   final service = ref.read(healthServiceProvider);
   return await service.checkHealth();
 });
+
+final backendStatusProvider = FutureProvider<BackendStatus>((ref) async {
+  final service = ref.read(healthServiceProvider);
+  return await service.checkBackendStatus();
+});

@@ -135,21 +135,29 @@ Each finding should contain, at minimum:
 - `id`
 - `scan_id`
 - `title`
-- `category`
-- `severity`
-- `confidence`
-- `endpoint`
+- `category` — from the closed enum in `VULN_TAXONOMY.md` §2
+- `cwe` — CWE identifiers; what makes results comparable to the wider literature
+- `severity` — computed from stored CVSS inputs, not an LLM-emitted string
+- `confidence` — computed from structured signals, not a bare model float
+- `endpoint` — stored as a **normalized route template** (`/users/{user_id}`), since
+  the ground-truth matching function depends on it
 - `method`
 - `description`
 - `impact`
+- `runtime_confirmed` — the boolean that separates a source-suspicion finding from a
+  demonstrated one, and the gate for inclusion in the primary detection metric
+- `oracle_rule_id` — which deterministic oracle fired
 - `evidence`
 - `reproduction_summary`
 - `source_locations`
 - `fix_summary`
 - `patch`
 - `verification_status`
+- `duplicate_of` — so recall cannot be inflated by reporting one issue several ways
 - timestamps
-- agent provenance
+- agent provenance, including prompt versions and model descriptor
+
+Full schema, indexes, and size caps in `DATA_MODEL.md` §3.
 
 ## 9. Product success criteria
 
@@ -169,11 +177,23 @@ The platform should make it easy to answer:
 The application must preserve enough structured data to calculate:
 
 - vulnerability detection rate
-- false positive rate
-- fix accuracy
+- false positive rate (reported as false discovery rate; see `METHODOLOGY.md` §3.3)
+- fix accuracy — under the dual criterion: exploit blocked **and** functionality preserved
+- functional regression rate
 - fix verification rate
+- post-fix robustness rate
 - scan duration
+- cost and tokens per confirmed finding and per verified fix
 - vulnerabilities by category/severity
-- comparison between multi-agent, single-agent, and traditional approaches
+- run-to-run stability across repeated trials
+- comparison between multi-agent, multi-agent-without-evaluator (ablation),
+  single-agent, and traditional approaches
 
 Do not store only free-form LLM text. Important experimental data must be structured.
+
+Two consequences for the product, not just the research harness:
+
+- **The evaluation engine must run headless.** `RESEARCH.md` §11 requires experiments
+  without Flutter; roughly 600 scans cannot be driven through a desktop UI.
+- **A finding's severity must be recomputable.** Store the rubric *inputs* alongside
+  the score, or a later rubric revision makes every prior result irreproducible.

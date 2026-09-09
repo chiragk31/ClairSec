@@ -9,10 +9,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pydantic import BaseModel
 
+from app.core.validators import validate_project_id
 from app.database.client import get_database
 from app.database.models import ProjectRecord
 from app.isolation.errors import IsolationError
 from app.services.isolation_service import IsolationService
+from app.services.job_service import JobService
 
 router = APIRouter()
 
@@ -43,6 +45,13 @@ class IsolationStatusResponse(BaseModel):
         )
 
 
+class IsolationJobResponse(BaseModel):
+    job_id: str
+    project_id: str
+    status: str
+    message: str = "Isolation job queued."
+
+
 class LogsResponse(BaseModel):
     project_id: str
     logs: str
@@ -56,7 +65,12 @@ def get_service(db: AsyncIOMotorDatabase = Depends(get_database)) -> IsolationSe
     return IsolationService(db)
 
 
+def get_job_service(db: AsyncIOMotorDatabase = Depends(get_database)) -> JobService:
+    return JobService(db)
+
+
 async def _get_record_or_404(project_id: str, service: IsolationService) -> ProjectRecord:
+    validate_project_id(project_id)
     record = await service.get_project(project_id)
     if record is None:
         raise HTTPException(
@@ -72,26 +86,25 @@ async def _get_record_or_404(project_id: str, service: IsolationService) -> Proj
 
 @router.post(
     "/projects/{project_id}/isolate",
-    response_model=IsolationStatusResponse,
+    response_model=IsolationJobResponse,
     status_code=status.HTTP_202_ACCEPTED,
-    summary="Start isolation for a validated project",
+    summary="Start isolation for a validated project as a background job",
 )
 async def start_isolation(
-    project_id: str,
-    service: IsolationService = Depends(get_service),
-) -> IsolationStatusResponse:
+    project_id: str = Depends(validate_project_id),
+    service: JobService = Depends(get_job_service),
+) -> IsolationJobResponse:
     """
-    Trigger the Docker isolation lifecycle for a project.
-
-    Copies the source into a scan workspace, builds a container image,
-    starts the container with resource limits and network isolation,
-    and verifies the health check. Returns the updated project status.
-
-    If any step fails, the project is marked import_failed with a reason.
+    Trigger the Docker isolation lifecycle as a background job (OPERATIONS §5).
+    Returns 202 Accepted with job_id immediately.
     """
     try:
-        record = await service.start_isolation(project_id)
-        return IsolationStatusResponse.from_record(record)
+        job = await service.submit_isolation_job(project_id)
+        return IsolationJobResponse(
+            job_id=job.id,
+            project_id=job.project_id,
+            status=job.status.value,
+        )
     except IsolationError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -105,7 +118,7 @@ async def start_isolation(
     summary="Stop the running container for a project",
 )
 async def stop_isolation(
-    project_id: str,
+    project_id: str = Depends(validate_project_id),
     service: IsolationService = Depends(get_service),
 ) -> IsolationStatusResponse:
     """Stop the container for this project and mark it stopped."""
@@ -122,7 +135,7 @@ async def stop_isolation(
     summary="Full cleanup: stop container, remove image and workspace",
 )
 async def cleanup_isolation(
-    project_id: str,
+    project_id: str = Depends(validate_project_id),
     service: IsolationService = Depends(get_service),
 ) -> IsolationStatusResponse:
     """Remove all Docker and filesystem resources for this project."""
@@ -139,7 +152,7 @@ async def cleanup_isolation(
     summary="Get current isolation status for a project",
 )
 async def get_isolation_status(
-    project_id: str,
+    project_id: str = Depends(validate_project_id),
     service: IsolationService = Depends(get_service),
 ) -> IsolationStatusResponse:
     record = await _get_record_or_404(project_id, service)
@@ -152,7 +165,7 @@ async def get_isolation_status(
     summary="Retrieve container logs (size-limited)",
 )
 async def get_logs(
-    project_id: str,
+    project_id: str = Depends(validate_project_id),
     service: IsolationService = Depends(get_service),
 ) -> LogsResponse:
     """

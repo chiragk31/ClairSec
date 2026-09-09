@@ -5,7 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../features/dashboard/dashboard_screen.dart';
 import '../../features/projects/projects_screen.dart';
 import '../../features/scans/scans_screen.dart';
+import '../../features/scans/scan_detail_screen.dart';
 import '../../features/vulnerabilities/vulnerabilities_screen.dart';
+import '../../features/vulnerabilities/finding_detail_screen.dart';
+import '../../features/fixes/fix_review_screen.dart';
 import '../../features/agents/agents_screen.dart';
 import '../../features/reports/reports_screen.dart';
 import '../../features/settings/settings_screen.dart';
@@ -20,6 +23,8 @@ class AppRoutes {
   static const String dashboard = '/';
   static const String projects = '/projects';
   static const String scans = '/scans';
+  static String scanDetail(String scanId) => '/scans/$scanId';
+  static String findingDetail(String findingId) => '/vulnerabilities/$findingId';
   static const String vulnerabilities = '/vulnerabilities';
   static const String agents = '/agents';
   static const String reports = '/reports';
@@ -57,9 +62,31 @@ final routerProvider = Provider<GoRouter>((ref) {
             ),
           ),
           GoRoute(
+            path: '/scans/:scanId',
+            pageBuilder: (context, state) => NoTransitionPage(
+              child: ScanDetailScreen(scanId: state.pathParameters['scanId']!),
+            ),
+          ),
+          GoRoute(
             path: AppRoutes.vulnerabilities,
             pageBuilder: (context, state) => const NoTransitionPage(
               child: VulnerabilitiesScreen(),
+            ),
+          ),
+          GoRoute(
+            path: '/vulnerabilities/:findingId',
+            pageBuilder: (context, state) => NoTransitionPage(
+              child: FindingDetailScreen(
+                findingId: state.pathParameters['findingId']!,
+              ),
+            ),
+          ),
+          GoRoute(
+            path: '/fixes/:findingId',
+            pageBuilder: (context, state) => NoTransitionPage(
+              child: FixReviewScreen(
+                findingId: state.pathParameters['findingId']!,
+              ),
             ),
           ),
           GoRoute(

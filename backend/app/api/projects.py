@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pydantic import BaseModel
 
+from app.core.validators import validate_project_id
 from app.database.client import get_database
 from app.database.models import ProjectRecord
 from app.services.project_service import ProjectService
@@ -103,7 +104,7 @@ async def list_projects(
     summary="Get a single project by ID",
 )
 async def get_project(
-    project_id: str,
+    project_id: str = Depends(validate_project_id),
     service: ProjectService = Depends(get_service),
 ) -> ProjectResponse:
     record = await service.get_project(project_id)

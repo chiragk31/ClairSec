@@ -95,9 +95,10 @@ class TestFastAPIValidator:
 # =============================================================================
 
 def _make_client_with_mock_db():
-    """Create a TestClient with the database dependency mocked out."""
+    """Create a TestClient with the database dependency mocked out and auth header set."""
     from app.main import create_app
     from app.database.client import get_database
+    from app.core.auth import get_launch_token, initialize_auth
 
     mock_db = MagicMock()
     # Mock the collection insert_one and find operations
@@ -109,7 +110,8 @@ def _make_client_with_mock_db():
 
     test_app = create_app()
     test_app.dependency_overrides[get_database] = lambda: mock_db
-    return TestClient(test_app), mock_col
+    token = initialize_auth()
+    return TestClient(test_app, headers={"Authorization": f"Bearer {token}"}), mock_col
 
 
 class TestProjectsAPI:
@@ -147,7 +149,7 @@ class TestProjectsAPI:
 
     def test_get_project_not_found(self):
         client, _ = _make_client_with_mock_db()
-        response = client.get("/api/projects/nonexistent-id")
+        response = client.get("/api/projects/00000000-0000-0000-0000-000000000000")
         assert response.status_code == 404
 
     def test_project_name_defaults_to_dirname(self):

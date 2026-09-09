@@ -44,4 +44,6 @@ class ProjectService:
         return await self._repo.list_all()
 
     async def get_project(self, project_id: str) -> ProjectRecord | None:
+        from app.core.validators import validate_project_id
+        validate_project_id(project_id)
         return await self._repo.get_by_id(project_id)

@@ -42,6 +42,46 @@ class WorkspaceManager:
         """Return the scan_workspace/ path for this project."""
         return self.get_project_root(project_id) / SCAN_WORKSPACE_SUBDIR
 
+    def get_modified_workspace_path(self, project_id: str) -> Path:
+        """Return the modified_workspace/ path for this project (Phase 7)."""
+        return self.get_project_root(project_id) / MODIFIED_WORKSPACE_SUBDIR
+
+    def create_modified_workspace(self, project_id: str) -> Path:
+        """
+        Populate modified_workspace from scan_workspace (PHASES.md Phase 7).
+        SECURITY: scan_workspace is strictly read-only and never modified.
+        Copies with symlinks=False.
+        """
+        scan_ws = self.get_scan_workspace_path(project_id)
+        if not scan_ws.exists():
+            raise IsolationError(
+                f"Cannot create modified workspace: scan_workspace does not exist for project {project_id}: {scan_ws}"
+            )
+        dest = self.get_modified_workspace_path(project_id)
+        if dest.exists():
+            return dest
+
+        try:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(
+                src=scan_ws,
+                dst=dest,
+                symlinks=False,
+                ignore_dangling_symlinks=True,
+                dirs_exist_ok=False,
+            )
+            logger.info(
+                "Created modified workspace for project %s: %s → %s",
+                project_id,
+                scan_ws,
+                dest,
+            )
+            return dest
+        except Exception as exc:
+            raise IsolationError(
+                f"Failed to create modified workspace for project {project_id}: {exc}"
+            ) from exc
+
     def create_scan_workspace(self, project_id: str, source_path: str) -> Path:
         """
         Copy the original project into a fresh scan_workspace directory.

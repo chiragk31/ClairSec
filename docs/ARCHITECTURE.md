@@ -88,6 +88,7 @@ backend/
 │   │   ├── scans.py
 │   │   ├── vulnerabilities.py
 │   │   ├── reports.py
+│   │   ├── isolation.py
 │   │   └── websocket.py
 │   ├── agents/
 │   │   ├── base.py
@@ -98,28 +99,52 @@ backend/
 │   ├── orchestration/
 │   │   ├── pipeline.py
 │   │   ├── state.py
-│   │   └── events.py
+│   │   ├── events.py
+│   │   └── jobs.py            # background job supervisor, cancellation, deadlines
 │   ├── security/
 │   │   ├── target_manager.py
 │   │   ├── test_engine.py
+│   │   ├── oracles.py         # deterministic per-category oracles (VULN_TAXONOMY §5)
+│   │   ├── scoped_client.py   # host-locked HTTP client (THREAT_MODEL T9)
+│   │   ├── redaction.py       # secret deny-list + scrubber (THREAT_MODEL C5)
 │   │   ├── evidence.py
 │   │   └── policies.py
 │   ├── isolation/
-│   │   └── docker_manager.py
+│   │   ├── docker_manager.py
+│   │   ├── workspace.py
+│   │   └── network.py         # internal network + scanner-side container
 │   ├── llm/
-│   │   ├── provider.py
-│   │   ├── prompts.py
+│   │   ├── provider.py        # Protocol; see LLM.md §1
+│   │   ├── providers/         # one module per vendor; the only place SDKs are imported
+│   │   ├── prompts/           # versioned .md files + registry.py (LLM.md §4)
+│   │   ├── quarantine.py      # untrusted-content envelope (LLM.md §6)
+│   │   ├── cache.py           # content-addressed replay cache (LLM.md §5)
 │   │   └── schemas.py
+│   ├── patching/
+│   │   ├── patch_service.py   # diff application; never executes model output
+│   │   └── validation.py      # path containment, AST parse, size caps
+│   ├── research/
+│   │   ├── matching.py        # the matching function (METHODOLOGY §3)
+│   │   ├── metrics.py
+│   │   ├── statistics.py      # bootstrap, McNemar, effect sizes
+│   │   ├── runner.py          # headless resumable batch runner (OPERATIONS §7)
+│   │   └── arms/              # traditional | single_agent | no_eval | multi_agent
 │   ├── database/
 │   │   ├── client.py
 │   │   ├── repositories.py
+│   │   ├── migrations/
 │   │   └── models.py
 │   └── services/
 │       ├── project_service.py
+│       ├── isolation_service.py
 │       ├── scan_service.py
 │       └── report_service.py
 └── tests/
 ```
+
+`research/` must not import from `api/`. `RESEARCH.md` §11 requires the evaluation
+engine to run without Flutter, and roughly 600 scans cannot be driven through a
+desktop UI — so the dependency runs one way only.
 
 Recommended Flutter structure:
 
@@ -183,12 +208,30 @@ Events should be structured, for example:
 {
   "type": "agent.status",
   "scan_id": "scan_123",
+  "seq": 417,
   "agent": "attacker",
   "status": "running",
   "message": "Testing endpoint",
   "timestamp": "..."
 }
 ```
+
+`seq` is a monotonic per-scan sequence number and events are persisted to
+`agent_events` before broadcast. A client reconnecting mid-scan resubscribes with its
+last-seen `seq` and receives the gap. A purely in-memory broadcast loses the stream on
+any hiccup during a 30-minute scan, and the loss is silent.
+
+### Long-running operations
+
+Isolation and scans are **background jobs**, not synchronous handlers. A command
+endpoint validates, enqueues, and returns a job id immediately; progress arrives over
+the WebSocket. Blocking Docker, subprocess, and filesystem work runs off the event
+loop (`RULES.md` §5a). Every job carries a cancellation token and a
+supervisor-enforced deadline.
+
+The local HTTP surface is authenticated and bound to `127.0.0.1`
+(`SECURITY.md` §5a) — it drives Docker and writes to disk, so it is a privileged
+interface even though it is local.
 
 ## 5. Agent state machine
 

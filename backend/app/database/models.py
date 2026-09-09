@@ -38,12 +38,36 @@ class IsolationStatus(str, Enum):
     IMPORT_FAILED = "import_failed"  # Could not build / start / health-check
 
 
+class JobStatus(str, Enum):
+    """Lifecycle status of a background job (OPERATIONS §5, RULES §5a)."""
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    INTERRUPTED = "interrupted"
+
+
 def _now() -> datetime:
     return datetime.now(tz=timezone.utc)
 
 
 def _new_id() -> str:
     return str(uuid.uuid4())
+
+
+class JobRecord(BaseModel):
+    """Persisted record of an asynchronous background job."""
+    id: str = Field(default_factory=_new_id)
+    project_id: str
+    status: JobStatus = JobStatus.PENDING
+    stage: str = "queued"
+    cancel_requested: bool = False
+    error: str | None = None
+    created_at: datetime = Field(default_factory=_now)
+    updated_at: datetime = Field(default_factory=_now)
+
+    model_config = {"populate_by_name": True}
 
 
 class ProjectRecord(BaseModel):
@@ -54,6 +78,7 @@ class ProjectRecord(BaseModel):
     The original source_path is never modified; it is treated as immutable input.
     """
     id: str = Field(default_factory=_new_id)
+    schema_version: int = 1
     name: str
     source_path: str
     """Absolute path to the user's original project directory. Never modified."""
@@ -94,6 +119,12 @@ class ProjectRecord(BaseModel):
     container_name: str | None = None
     """Docker container name, deterministic: clairsec-target-{project_id[:8]}."""
 
+    proxy_container_id: str | None = None
+    """Docker scanner proxy container ID."""
+
+    proxy_port: int | None = None
+    """Host port bound to 127.0.0.1 for scanner proxy traffic to this target."""
+
     isolation_error: str | None = None
     """
     Human-readable reason for import_failed status.
@@ -102,5 +133,36 @@ class ProjectRecord(BaseModel):
 
     created_at: datetime = Field(default_factory=_now)
     updated_at: datetime = Field(default_factory=_now)
+
+    model_config = {"populate_by_name": True}
+
+
+class ScanRecord(BaseModel):
+    """
+    Persisted record of a security scan run (DATA_MODEL.md §3).
+    """
+    id: str = Field(default_factory=_new_id)
+    project_id: str
+    project_name: str = ""
+    arm: str = "multi_agent"
+    state: str = "queued"  # "queued", "running", "completed", "failed", "cancelled"
+    stage: str = "queued"  # "queued", "builder", "attacker", "evaluator", "fixer", "verifier", "completed", "failed"
+    created_at: datetime = Field(default_factory=_now)
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
+    cancel_requested: bool = False
+    terminal_reason: str | None = None
+    error: str | None = None
+    findings_confirmed: int = 0
+    counters: dict[str, int] = Field(default_factory=lambda: {
+        "tests_executed": 0,
+        "candidates": 0,
+        "confirmed": 0,
+        "rejected": 0,
+        "inconclusive": 0,
+        "fixes_proposed": 0,
+        "fixes_applied": 0,
+        "fixes_verified": 0,
+    })
 
     model_config = {"populate_by_name": True}

@@ -1,0 +1,62 @@
+[
+  {
+    "vuln_id": "VULN-BOLA-001",
+    "project_id": "vulnerable_fastapi_app",
+    "category": "BOLA",
+    "cwe": "CWE-639",
+    "route_template": "/documents/{doc_id}",
+    "method": "GET",
+    "source_file": "main.py",
+    "source_line_range": [103, 114],
+    "injected_by": "seed_tier_a_initial",
+    "pov": {
+      "script": "pov_bola.py",
+      "entrypoint": "run_pov",
+      "type": "executable_script"
+    },
+    "functional_tests": [
+      "test_functional.py::test_user_can_read_own_document",
+      "test_functional.py::test_create_document",
+      "test_functional.py::test_unauthenticated_request_rejected"
+    ]
+  },
+  {
+    "vuln_id": "VULN-BOPLA-001",
+    "project_id": "vulnerable_fastapi_app",
+    "category": "BOPLA_MASS_ASSIGN",
+    "cwe": "CWE-915",
+    "route_template": "/users/{user_id}/profile",
+    "method": "PUT",
+    "source_file": "main.py",
+    "source_line_range": [145, 162],
+    "injected_by": "seed_tier_a_initial",
+    "pov": {
+      "script": "pov_mass_assign.py",
+      "entrypoint": "run_pov",
+      "type": "executable_script"
+    },
+    "functional_tests": [
+      "test_functional.py::test_user_can_update_profile_bio",
+      "test_functional.py::test_user_cannot_update_other_user_profile"
+    ]
+  },
+  {
+    "vuln_id": "VULN-MISCONFIG-001",
+    "project_id": "vulnerable_fastapi_app",
+    "category": "SECURITY_MISCONFIG",
+    "cwe": "CWE-16",
+    "route_template": "/debug/config",
+    "method": "GET",
+    "source_file": "main.py",
+    "source_line_range": [181, 191],
+    "injected_by": "seed_tier_a_initial",
+    "pov": {
+      "script": "pov_misconfig.py",
+      "entrypoint": "run_pov",
+      "type": "executable_script"
+    },
+    "functional_tests": [
+      "test_functional.py::test_health_and_root_endpoints"
+    ]
+  }
+]

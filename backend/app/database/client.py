@@ -28,7 +28,8 @@ def get_database() -> AsyncIOMotorDatabase:
 async def init_client() -> None:
     """Open the MongoDB connection. Called during FastAPI lifespan startup."""
     global _client
-    _client = AsyncIOMotorClient(settings.mongodb_url)
+    timeout_ms = 500 if settings.testing else 30000
+    _client = AsyncIOMotorClient(settings.mongodb_url, serverSelectionTimeoutMS=timeout_ms)
 
 
 async def close_client() -> None:

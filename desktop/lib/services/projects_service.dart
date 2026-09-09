@@ -11,7 +11,7 @@ class ProjectsService {
   Future<ProjectRecord> importProject(String path, {String? name}) async {
     final response = await apiClient.post('/api/projects', data: {
       'path': path,
-      if (name != null) 'name': name,
+      'name': ?name,
     });
     return ProjectRecord.fromJson(response.data);
   }

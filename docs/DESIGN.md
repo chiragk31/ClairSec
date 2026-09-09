@@ -174,7 +174,46 @@ Show charts/tables for:
 - average scan duration
 - findings by severity
 - findings by vulnerability category
-- multi-agent vs single-agent vs traditional baseline
+- multi-agent vs multi-agent-without-evaluator vs single-agent vs traditional baseline
+
+Presentation rules that follow from `METHODOLOGY.md`:
+
+- **Never plot a point estimate without its interval.** Every rate is shown as
+  `0.72 [0.61, 0.81]` or as a bar with error bars. A bare number implies a precision
+  the k=3 trials do not support, and screenshots of dashboards end up in papers.
+- Label the false-positive figure **FDR**, not "false positive rate", so the
+  denominator is unambiguous.
+- Show the **n** and the exclusion count for every cell. A comparison drawn over
+  different denominators must be visibly different.
+- Show cost and tokens alongside detection, not on a separate screen. The trade-off is
+  the interesting part of the result.
+- The dashboard reads from computed summaries; it never recomputes metrics in Dart.
+  One implementation of the matching function, in Python, for every consumer.
+
+## 10a. Evidence honesty in the UI
+
+The UI is where a finding stops being data and becomes a claim, so the distinctions
+`SECURITY.md` §11 draws must survive into pixels:
+
+- **Runtime-confirmed and source-suspicion findings must be visually distinct** — not
+  merely a different word in a details pane. A suspicion presented like a confirmation
+  is how a security tool loses a user's trust permanently.
+- `inconclusive` is a first-class state, not a variant of `rejected`.
+- A fix that blocked the exploit but broke the functional suite shows as `regressed`,
+  never as a success.
+- Show the model, prompt version, and platform version on any exported report.
+- A live cost/token meter during scans (`OPERATIONS.md` §8).
+
+## 10b. Accessibility
+
+`DESIGN.md` §2 already forbids conveying severity by colour alone. Extend that:
+
+- Keyboard navigation for every action; visible focus indicators.
+- Contrast meeting WCAG AA against the dark theme — verify, do not assume; dark
+  themes fail contrast checks more often than light ones.
+- Semantic labels on icon-only controls for screen readers.
+- Respect the OS reduced-motion setting for any progress animation.
+- Do not rely on hover alone to reveal information a user needs to act.
 
 ## 11. Typography
 

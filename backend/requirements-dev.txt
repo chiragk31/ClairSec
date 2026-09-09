@@ -1,0 +1,15 @@
+# ClairSec Backend — Development & Test Dependencies
+# Install with: pip install -r requirements-dev.txt
+
+# Testing
+pytest>=7.4.0,<9.0
+pytest-asyncio>=0.23.0,<1.0
+
+# Linting & formatting
+ruff>=0.4.0
+
+# Type checking
+mypy>=1.8.0
+
+# Dependency management
+pip-tools>=7.3.0

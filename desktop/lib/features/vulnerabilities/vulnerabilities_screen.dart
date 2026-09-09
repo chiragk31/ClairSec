@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../core/theme/app_theme.dart';
+import '../../providers/findings_provider.dart';
 import '../shared/page_header.dart';
 import '../shared/empty_state.dart';
+import 'widgets/finding_list_tile.dart';
 
 class VulnerabilitiesScreen extends StatelessWidget {
   const VulnerabilitiesScreen({super.key});
@@ -24,11 +28,13 @@ class VulnerabilitiesScreen extends StatelessWidget {
   }
 }
 
-class _VulnerabilitiesContent extends StatelessWidget {
+class _VulnerabilitiesContent extends ConsumerWidget {
   const _VulnerabilitiesContent();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final findings = ref.watch(findingsProvider);
+
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -37,15 +43,27 @@ class _VulnerabilitiesContent extends StatelessWidget {
           // Severity legend row — paired icon + label per DESIGN.md rule
           _SeverityLegend(),
           const SizedBox(height: 24),
-          const Expanded(
-            child: EmptyState(
-              icon: Icons.bug_report_outlined,
-              title: 'No vulnerabilities found yet',
-              description:
-                  'Confirmed findings from completed scans will appear here. '
-                  'Each entry shows severity, confidence, endpoint, '
-                  'evidence, and fix status.',
-            ),
+          Expanded(
+            child: findings.isEmpty
+                ? const EmptyState(
+                    icon: Icons.bug_report_outlined,
+                    title: 'No vulnerabilities found yet',
+                    description:
+                        'Confirmed findings from completed scans will appear here. '
+                        'Each entry shows severity, confidence, endpoint, '
+                        'evidence, and fix status.',
+                  )
+                : ListView.separated(
+                    itemCount: findings.length,
+                    separatorBuilder: (context, i) => const SizedBox(height: 12),
+                    itemBuilder: (context, i) {
+                      final f = findings[i];
+                      return FindingListTile(
+                        finding: f,
+                        onTap: () => context.go('/vulnerabilities/${f.id}'),
+                      );
+                    },
+                  ),
           ),
         ],
       ),

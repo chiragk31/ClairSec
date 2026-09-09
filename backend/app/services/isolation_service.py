@@ -13,10 +13,12 @@ SECURITY invariants:
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
+from app.core.validators import validate_project_id
 from app.database.models import IsolationStatus, ProjectRecord
 from app.database.repositories import ProjectRepository
 from app.isolation.docker_manager import DockerManager
@@ -27,12 +29,24 @@ logger = logging.getLogger(__name__)
 
 
 class IsolationService:
-    def __init__(self, db: AsyncIOMotorDatabase) -> None:
+    def __init__(
+        self,
+        db: AsyncIOMotorDatabase,
+        docker_manager: DockerManager | None = None,
+        workspace_manager: WorkspaceManager | None = None,
+    ) -> None:
         self._repo = ProjectRepository(db)
-        self._workspace = WorkspaceManager()
-        self._docker = DockerManager()
+        self._workspace = workspace_manager or WorkspaceManager()
+        self._docker_instance = docker_manager
+
+    @property
+    def _docker(self) -> DockerManager:
+        if self._docker_instance is None:
+            self._docker_instance = DockerManager()
+        return self._docker_instance
 
     async def get_project(self, project_id: str) -> ProjectRecord | None:
+        validate_project_id(project_id)
         return await self._repo.get_by_id(project_id)
 
     async def start_isolation(self, project_id: str) -> ProjectRecord:
@@ -49,6 +63,7 @@ class IsolationService:
 
         Returns the updated ProjectRecord.
         """
+        validate_project_id(project_id)
         record = await self._repo.get_by_id(project_id)
         if record is None:
             raise IsolationError(f"Project {project_id} not found")
@@ -73,8 +88,21 @@ class IsolationService:
             record.isolation_status = IsolationStatus.BUILDING
             record = await self._repo.update(record)
 
-            workspace_path = self._workspace.create_scan_workspace(
-                project_id, record.source_path
+            # Re-isolating a project must be idempotent: a workspace left over
+            # from a previous run (successful or failed) is cleaned up first,
+            # rather than failing with "workspace already exists". Without this,
+            # clicking Isolate twice permanently wedges the project into
+            # import_failed.
+            existing_workspace = self._workspace.get_project_root(project_id)
+            if existing_workspace.exists():
+                logger.info(
+                    "Existing workspace found for project %s — cleaning up before re-isolation.",
+                    project_id[:8],
+                )
+                await asyncio.to_thread(self._workspace.cleanup_workspace, project_id)
+
+            workspace_path = await asyncio.to_thread(
+                self._workspace.create_scan_workspace, project_id, record.source_path
             )
             workspace_path_str = str(workspace_path)
             record.workspace_path = workspace_path_str
@@ -97,23 +125,32 @@ class IsolationService:
             record.container_name = container_name
             record = await self._repo.update(record)
 
-            # ── Step 4: Health check ──────────────────────────────────────
-            healthy = self._docker.wait_for_healthy(container_id)
+            # ── Step 4: Start scanner proxy service (C3.3) ────────────────
+            proxy_container_id, proxy_port = self._docker.start_proxy(
+                project_id, container_name
+            )
+            record.proxy_container_id = proxy_container_id
+            record.proxy_port = proxy_port
+            record = await self._repo.update(record)
+
+            # ── Step 5: Health check via proxy ────────────────────────────
+            healthy = self._docker.wait_for_healthy(proxy_port)
             if not healthy:
                 raise IsolationError(
-                    f"Container {container_name} failed health check within "
+                    f"Container {container_name} failed health check via proxy within "
                     f"the startup timeout."
                 )
 
-            # ── Step 5: Mark ready ────────────────────────────────────────
+            # ── Step 6: Mark ready ────────────────────────────────────────
             record.isolation_status = IsolationStatus.READY
             record.isolation_error = None
             record = await self._repo.update(record)
 
             logger.info(
-                "Project %s isolation complete. Container: %s",
+                "Project %s isolation complete. Container: %s, Proxy port: %s",
                 project_id[:8],
                 container_name,
+                proxy_port,
             )
             return record
 
@@ -146,24 +183,31 @@ class IsolationService:
             record.isolation_error = error_msg[:2000]
             record.container_id = None
             record.container_name = None
+            record.proxy_container_id = None
+            record.proxy_port = None
             record = await self._repo.update(record)
             return record
 
     async def stop_isolation(self, project_id: str) -> ProjectRecord:
-        """Stop the container for a project and mark it stopped."""
+        """Stop the container and proxy for a project and mark it stopped."""
+        validate_project_id(project_id)
         record = await self._repo.get_by_id(project_id)
         if record is None:
             raise IsolationError(f"Project {project_id} not found")
 
         if record.container_id:
             self._docker.stop_container(record.container_id)
+        self._docker.stop_proxy(project_id)
 
         record.isolation_status = IsolationStatus.STOPPED
         record.container_id = None
+        record.proxy_container_id = None
+        record.proxy_port = None
         return await self._repo.update(record)
 
     async def cleanup_isolation(self, project_id: str) -> ProjectRecord:
-        """Full cleanup: stop container, remove image, remove workspace, update DB."""
+        """Full cleanup: stop container, proxy, remove image, remove workspace, update DB."""
+        validate_project_id(project_id)
         record = await self._repo.get_by_id(project_id)
         if record is None:
             raise IsolationError(f"Project {project_id} not found")
@@ -174,6 +218,8 @@ class IsolationService:
         record.isolation_status = IsolationStatus.PENDING
         record.container_id = None
         record.container_name = None
+        record.proxy_container_id = None
+        record.proxy_port = None
         record.workspace_path = None
         record.isolation_error = None
         return await self._repo.update(record)

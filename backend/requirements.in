@@ -1,0 +1,27 @@
+# ClairSec Backend — Direct Dependencies
+# Compile to requirements.txt with: pip-compile --generate-hashes requirements.in
+# Do NOT edit requirements.txt by hand.
+
+# Web framework
+fastapi>=0.100.0,<1.0
+uvicorn[standard]>=0.23.0,<1.0
+pydantic-settings>=2.0.0,<3.0
+
+# Async
+anyio>=4.0.0,<5.0
+
+# HTTP client
+httpx>=0.24.1,<1.0
+
+# Database
+motor>=3.3.0,<4.0
+
+# TOML (Python <3.11 fallback, harmless on 3.11+)
+tomli>=2.0.0,<3.0
+
+# Docker
+docker>=6.1.0,<8.0
+
+# LLM Provider (Anthropic SDK isolated to backend/app/llm/providers/anthropic_provider.py)
+anthropic>=0.40.0,<2.0
+
