@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from app.api import health
 from app.api import projects
 from app.api import isolation
+from app.api import scans
 from app.core.config import settings
 from app.database.client import init_client, close_client
 
@@ -27,6 +28,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router, prefix="/api", tags=["health"])
     app.include_router(projects.router, prefix="/api", tags=["projects"])
     app.include_router(isolation.router, prefix="/api", tags=["isolation"])
+    app.include_router(scans.router, prefix="/api", tags=["scans"])
 
     return app
 

@@ -6,9 +6,9 @@
 
 ## Current status
 
-- Project stage: Isolation and target lifecycle
-- Current phase: Phase 3
-- Overall status: Phase 3 implemented and verified
+- Project stage: Builder agent
+- Current phase: Phase 4
+- Overall status: Phase 4 implemented and verified
 
 ## Product
 
@@ -96,6 +96,16 @@ Import FastAPI project
 - [Phase 3] Added Docker integration test fixture (`broken_fastapi_app/`) with an invalid pip package to trigger build failure → `import_failed`.
 - [Phase 3] Added `pytest.ini` with `docker` marker so Docker integration tests can be skipped in CI.
 - [Phase 3] 32 tests pass (26 unit + 6 Docker integration).
+- [Phase 4] Added `BaseLLMProvider` abstract interface (`llm/provider.py`) with `generate(prompt, prompt_version) -> LLMResponse`. Concrete impls: `GeminiProvider` (google-generativeai SDK), `MockProvider` (test-only, no network). Factory: `get_provider()` reads `settings.llm_provider`.
+- [Phase 4] Added LLM config to `core/config.py`: `llm_provider`, `llm_model`, `gemini_api_key`, `openai_api_key`, `anthropic_api_key`, `llm_max_retries=3`, `llm_request_timeout=60`.
+- [Phase 4] Added versioned prompt templates (`llm/prompts.py`): `BUILDER_ANALYSIS_VERSION='builder_v1.0'`. System preamble enforces prompt injection defense (target content cannot override Builder role). Source truncated to 150 lines before sending to LLM.
+- [Phase 4] Added Pydantic output schemas (`llm/schemas.py`): `BuilderAnalysis`, `RouteInfo`, `AuthMechanism`, `DependencyInfo`, `DatabaseAccessInfo`. `BuilderAnalysis` has explicit `gaps` field for honest representation of analysis limits.
+- [Phase 4] Added `AgentState` enum and `BaseAgent` abstract class (`agents/base.py`) covering the full pipeline state machine (CREATED→COMPLETED + FAILED/CANCELLED/PARTIAL).
+- [Phase 4] Added Phase 4 MongoDB models: `ScanRecord`, `AgentEvent`, `AgentContextRecord` (`database/models.py`).
+- [Phase 4] Added `ScanRepository`, `AgentEventRepository` (10KB payload cap), `AgentContextRepository` (`database/scan_repositories.py`).
+- [Phase 4] Implemented `BuilderAgent` (`agents/builder.py`): fetches live OpenAPI from running container via `DockerManager.get_host_port()`, reads entry source from workspace (not original), calls LLM with bounded retries, validates response against `BuilderAnalysis` schema (handles JSON, markdown-fenced JSON, refusals, empty responses, schema mismatches), persists to `agent_context`, emits structured `AgentEvent` records throughout.
+- [Phase 4] Added `ScanRepository.list_by_project`, scans REST API (`api/scans.py`): `POST /api/scans`, `GET /api/scans`, `GET /api/scans/{id}`, `POST /api/scans/{id}/run-builder` (background task), `GET /api/scans/{id}/context`, `GET /api/scans/{id}/events`.
+- [Phase 4] 57 tests pass: 50 unit (no Docker/LLM/Mongo), 7 Docker integration.
 
 ## In-progress work
 
@@ -235,6 +245,55 @@ Known limitations:
     specific routing — deferred as hardening to Phase 12 per docs/SECURITY.md.
 Next recommended task: Begin Phase 4 (Builder agent) — static analysis of the isolated target's
 API surface, route discovery, OpenAPI parsing, and producing structured target context.
+```
+
+```text
+Date: 2026-09-09
+Phase: Phase 4
+What was implemented:
+- LLM provider abstraction (BaseLLMProvider, MockProvider, GeminiProvider, get_provider factory).
+- Versioned prompt templates (builder_v1.0) with prompt injection defense in system preamble.
+- Pydantic output schemas for BuilderAnalysis with explicit 'gaps' field.
+- AgentState enum + BaseAgent abstract class covering full 8-state pipeline machine.
+- Phase 4 MongoDB models: ScanRecord, AgentEvent, AgentContextRecord.
+- ScanRepository, AgentEventRepository (10KB payload cap), AgentContextRepository.
+- BuilderAgent: live OpenAPI fetch from container, bounded retries, full schema validation,
+  structured event emission, agent_context persistence.
+- Scans REST API: POST /scans, GET /scans, GET /scans/{id}, POST /{id}/run-builder,
+  GET /{id}/context, GET /{id}/events.
+Files/modules changed:
+  backend/requirements.txt (added google-generativeai>=0.8.0)
+  backend/app/core/config.py (added LLM provider settings)
+  backend/app/llm/provider.py (new)
+  backend/app/llm/prompts.py (new)
+  backend/app/llm/schemas.py (new)
+  backend/app/agents/base.py (new)
+  backend/app/agents/builder.py (new)
+  backend/app/database/models.py (extended: ScanRecord, AgentEvent, AgentContextRecord)
+  backend/app/database/scan_repositories.py (new)
+  backend/app/api/scans.py (new)
+  backend/app/main.py (registered scans router)
+  backend/tests/test_builder.py (new: 25 unit + 1 Docker integration test)
+Tests/checks run: pytest -m "not docker" — 50 passed. pytest -m docker — 7 passed. Total: 57.
+Architecture decisions this phase:
+  - First concrete LLM provider: Google Gemini (gemini-2.0-flash). Assumption: most accessible
+    for this dev environment. Swappable via LLM_PROVIDER env var without code changes.
+  - Provider interface: generate(prompt, prompt_version) -> LLMResponse. Prompt version stored
+    alongside every output for research reproducibility (docs/RESEARCH.md §8).
+  - Source truncated to 150 lines before sending to LLM to limit token usage and avoid sending
+    large untrusted payloads to an external provider.
+  - OpenAPI schema bounded to 8000 chars before inclusion in prompt.
+  - AgentEvent.data payload capped at 10KB in AgentEventRepository before MongoDB write.
+  - Builder does not produce security judgments — only structured inventory with explicit gaps.
+  - Prompt injection defense: system preamble explicitly instructs model to ignore any
+    instructions embedded in target project content.
+Known limitations:
+  - GEMINI_API_KEY must be set in .env for real (non-mock) LLM calls.
+  - Scans run-builder uses FastAPI BackgroundTasks (single-process). For Phase 9+, consider
+    a proper task queue (Celery/ARQ) for parallel scan support.
+  - No Flutter UI for scans yet — accessible via /api/scans and /docs only.
+Next recommended task: Begin Phase 5 (Attacker agent) — test-case abstraction, controlled
+request execution against the isolated container, evidence capture, candidate finding generation.
 ```
 
 ## Do not record here

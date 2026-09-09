@@ -41,6 +41,31 @@ class Settings(BaseSettings):
     # Port the target container is expected to listen on internally.
     docker_target_port: int = 8000
 
+    # -------------------------------------------------------------------------
+    # Phase 4: LLM provider settings
+    # Assumption: Google Gemini is wired as the first concrete provider because it
+    # is the most accessible for this development environment. The provider interface
+    # allows any other provider (OpenAI, Anthropic, local Ollama) to be swapped in
+    # by changing llm_provider + the relevant api_key setting.
+    # -------------------------------------------------------------------------
+
+    # Provider name: "gemini" | "openai" | "anthropic" | "mock"
+    # "mock" disables all real LLM calls — used in tests.
+    llm_provider: str = "gemini"
+
+    # Model identifier passed to the active provider.
+    llm_model: str = "gemini-2.0-flash"
+
+    # API keys — never hard-coded; always from environment / .env file.
+    # Only the key matching the active llm_provider is required at runtime.
+    gemini_api_key: str = ""
+    openai_api_key: str = ""
+    anthropic_api_key: str = ""
+
+    # LLM call settings
+    llm_max_retries: int = 3          # bounded retries on malformed/failed responses
+    llm_request_timeout: int = 60     # seconds per LLM call
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
 

@@ -104,3 +104,98 @@ class ProjectRecord(BaseModel):
     updated_at: datetime = Field(default_factory=_now)
 
     model_config = {"populate_by_name": True}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 4 models
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class ScanStatus(str, Enum):
+    """Overall lifecycle status of a scan."""
+    PENDING = "pending"
+    ANALYZING = "analyzing"       # Builder running
+    TARGET_READY = "target_ready" # Builder done
+    ATTACKING = "attacking"
+    EVALUATING = "evaluating"
+    FIXING = "fixing"
+    VERIFYING = "verifying"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    PARTIAL = "partial"
+
+
+class ScanRecord(BaseModel):
+    """
+    A scan ties together a project, a sequence of agent runs, and their results.
+    scan_id is the primary correlation identifier used across all collections.
+    """
+    id: str = Field(default_factory=_new_id)
+    project_id: str
+    status: ScanStatus = ScanStatus.PENDING
+
+    # LLM configuration snapshot for reproducibility (docs/RESEARCH.md §8)
+    llm_provider: str = ""
+    llm_model: str = ""
+    prompt_version: str = ""
+
+    error: str | None = None
+    """Human-readable failure reason, if any."""
+
+    created_at: datetime = Field(default_factory=_now)
+    updated_at: datetime = Field(default_factory=_now)
+
+    model_config = {"populate_by_name": True}
+
+
+class AgentEvent(BaseModel):
+    """
+    Structured event emitted by an agent during a scan.
+
+    Per docs/ARCHITECTURE.md §4: events are typed and structured so Phase 9
+    can stream them over WebSocket without format changes.
+
+    Event types: agent.status | agent.progress | agent.error | agent.result
+    """
+    id: str = Field(default_factory=_new_id)
+    scan_id: str
+    agent: str          # AgentRole value
+    event_type: str     # e.g. "agent.status", "agent.progress", "agent.error"
+    status: str | None = None
+    message: str | None = None
+    data: dict = Field(default_factory=dict)
+    """Structured event payload — schema varies by event_type."""
+    timestamp: datetime = Field(default_factory=_now)
+
+    model_config = {"populate_by_name": True}
+
+
+class AgentContextRecord(BaseModel):
+    """
+    Typed structured output persisted by an agent after its run.
+
+    Per docs/ARCHITECTURE.md §6: agents communicate through typed records,
+    not arbitrary text blobs. The context field holds the agent's Pydantic
+    model serialized to a dict.
+    """
+    id: str = Field(default_factory=_new_id)
+    scan_id: str
+    project_id: str
+    agent: str          # AgentRole value
+
+    # Reproducibility fields (docs/RULES.md §3, docs/RESEARCH.md §8)
+    llm_provider: str = ""
+    llm_model: str = ""
+    prompt_version: str = ""
+
+    context: dict = Field(default_factory=dict)
+    """
+    Structured agent output serialized from its Pydantic schema.
+    For Builder: serialized BuilderAnalysis.
+    """
+
+    created_at: datetime = Field(default_factory=_now)
+
+    model_config = {"populate_by_name": True}
+
