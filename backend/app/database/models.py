@@ -20,6 +20,24 @@ class ValidationStatus(str, Enum):
     UNKNOWN = "unknown"
 
 
+class IsolationStatus(str, Enum):
+    """
+    Tracks the Docker lifecycle state of an imported project.
+
+    Transitions:
+        pending → building → ready (health check passed)
+        ready   → running  (scan has started using this container)
+        running → stopped  (scan completed or user stopped)
+        any     → import_failed (build/startup/health check failed)
+    """
+    PENDING = "pending"
+    BUILDING = "building"
+    READY = "ready"       # Container healthy, awaiting scan
+    RUNNING = "running"   # Scan is actively using this container
+    STOPPED = "stopped"   # Container stopped, workspace still present
+    IMPORT_FAILED = "import_failed"  # Could not build / start / health-check
+
+
 def _now() -> datetime:
     return datetime.now(tz=timezone.utc)
 
@@ -40,6 +58,7 @@ class ProjectRecord(BaseModel):
     source_path: str
     """Absolute path to the user's original project directory. Never modified."""
 
+    # ── Phase 2 fields ────────────────────────────────────────────────────────
     validation_status: ValidationStatus = ValidationStatus.UNKNOWN
     validation_errors: list[str] = Field(default_factory=list)
     """Human-readable list of reasons why validation failed (if status=invalid)."""
@@ -56,7 +75,29 @@ class ProjectRecord(BaseModel):
     isolation_ready: bool = False
     """
     Static assessment: True if the project appears ready for isolation.
-    Does NOT mean Docker has run. Actual Docker lifecycle is Phase 3.
+    Does NOT mean Docker has run. Actual Docker lifecycle tracked by isolation_status.
+    """
+
+    # ── Phase 3 fields ────────────────────────────────────────────────────────
+    isolation_status: IsolationStatus = IsolationStatus.PENDING
+    """Current Docker lifecycle state of this project."""
+
+    workspace_path: str | None = None
+    """
+    Absolute path to the scan workspace (a copy of source_path).
+    Never the same as source_path. Created by WorkspaceManager in Phase 3.
+    """
+
+    container_id: str | None = None
+    """Docker container ID, set when the container is running."""
+
+    container_name: str | None = None
+    """Docker container name, deterministic: clairsec-target-{project_id[:8]}."""
+
+    isolation_error: str | None = None
+    """
+    Human-readable reason for import_failed status.
+    Treated as untrusted text (may come from Docker build output).
     """
 
     created_at: datetime = Field(default_factory=_now)

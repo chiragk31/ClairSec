@@ -3,6 +3,8 @@ Project repository — typed async access to the 'projects' MongoDB collection.
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.database.models import ProjectRecord
@@ -30,6 +32,17 @@ class ProjectRepository:
         if doc is None:
             return None
         return _from_doc(doc)
+
+    async def update(self, record: ProjectRecord) -> ProjectRecord:
+        """Update an existing document by its id field."""
+        record.updated_at = datetime.now(tz=timezone.utc)
+        doc = record.model_dump()
+        doc.pop("_id", None)  # never overwrite Mongo _id
+        await self._col.update_one(
+            {"id": record.id},
+            {"$set": doc},
+        )
+        return record
 
 
 def _from_doc(doc: dict) -> ProjectRecord:

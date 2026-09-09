@@ -6,9 +6,9 @@
 
 ## Current status
 
-- Project stage: Project import
-- Current phase: Phase 2
-- Overall status: Phase 2 implemented and verified
+- Project stage: Isolation and target lifecycle
+- Current phase: Phase 3
+- Overall status: Phase 3 implemented and verified
 
 ## Product
 
@@ -87,6 +87,15 @@ Import FastAPI project
 - [Phase 2] Added Flutter dependencies: `dio`, `file_picker`.
 - [Phase 2] Rewrote Flutter `ProjectsScreen` to use native folder picker and call backend import API. Displays detailed project cards (entry point, dependencies, isolation-ready badge) or honest error list.
 - [Phase 2] Wired the shell's backend connectivity indicator to the actual `/api/health` endpoint via Riverpod.
+- [Phase 3] Extended `ProjectRecord` with `IsolationStatus` enum (`pending/building/ready/running/stopped/import_failed`), `workspace_path`, `container_id`, `container_name`, `isolation_error` fields.
+- [Phase 3] Added `update()` to `ProjectRepository` for in-place status transitions.
+- [Phase 3] Implemented `WorkspaceManager` (`isolation/workspace.py`): copy-on-import into `{workspace_root}/{project_id}/scan_workspace/`, no symlink following, safe cleanup. The `modified_workspace/` convention is established but not yet populated (Phase 7).
+- [Phase 3] Implemented `DockerManager` (`isolation/docker_manager.py`): generates a Dockerfile, builds image (120s timeout), starts container (no host env vars, isolated bridge network, 256m/0.5cpu limits), health-checks by polling `GET /health` then `GET /` until `status<400` (30s timeout), captures size-limited logs (100KB cap), stops/removes containers, removes images, `cleanup_all()` safe on every failure path.
+- [Phase 3] Implemented `IsolationService` (`services/isolation_service.py`): orchestrates the full lifecycle; on any failure calls cleanup and marks `import_failed` with a truncated (2KB) reason string in `isolation_error`; no automatic retry (1 attempt by design).
+- [Phase 3] Added isolation REST API (`api/isolation.py`): `POST /isolate`, `POST /stop`, `POST /cleanup`, `GET /status`, `GET /logs`.
+- [Phase 3] Added Docker integration test fixture (`broken_fastapi_app/`) with an invalid pip package to trigger build failure → `import_failed`.
+- [Phase 3] Added `pytest.ini` with `docker` marker so Docker integration tests can be skipped in CI.
+- [Phase 3] 32 tests pass (26 unit + 6 Docker integration).
 
 ## In-progress work
 
@@ -182,6 +191,50 @@ Known limitations:
   - MSBuild issue on Windows still requires Developer PowerShell for `flutter run` (pre-existing).
   - Validation requires `requirements.txt` or `pyproject.toml` to consider a project "ready for isolation", but this is by design.
 Next recommended task: Begin Phase 3 (Isolation and target lifecycle) — Docker workspace creation, container lifecycle, and resource limits.
+```
+
+```text
+Date: 2026-09-09
+Phase: Phase 3
+What was implemented:
+- WorkspaceManager: copy-on-import to scan_workspace/, symlinks not followed, cleanup safe.
+- DockerManager: Dockerfile generation, image build (120s timeout), container start (no host env, 256m/0.5cpu, bridge network), health check polling with httpx (30s timeout, catches all httpx.HTTPError), size-limited log retrieval (100KB), stop/remove, cleanup_all.
+- IsolationService: full lifecycle orchestration; import_failed fallback on any error; cleanup always called on failure path.
+- REST API: POST /isolate, POST /stop, POST /cleanup, GET /status, GET /logs.
+- broken_fastapi_app/ fixture for build-failure testing.
+- pytest.ini with docker marker.
+Files/modules changed:
+  backend/requirements.txt (added docker>=6.1.0)
+  backend/pytest.ini (new: docker marker)
+  backend/app/core/config.py (added workspace/docker settings)
+  backend/app/database/models.py (added IsolationStatus enum, 4 new fields)
+  backend/app/database/repositories.py (added update())
+  backend/app/isolation/errors.py (new)
+  backend/app/isolation/workspace.py (new)
+  backend/app/isolation/docker_manager.py (new)
+  backend/app/services/isolation_service.py (new)
+  backend/app/api/isolation.py (new)
+  backend/app/main.py (registered isolation router)
+  backend/tests/fixtures/valid_fastapi_app/main.py (added / endpoint)
+  backend/tests/fixtures/valid_fastapi_app/Dockerfile (new)
+  backend/tests/fixtures/broken_fastapi_app/ (new)
+  backend/tests/test_isolation.py (new: 18 tests)
+Tests/checks run: pytest — 32 passed (26 unit, 6 Docker integration).
+Architecture decisions this phase:
+  - Resource limits: 256m RAM, 0.5 CPU (nano_cpus=500_000_000). Documented assumption.
+  - Build timeout: 120s. Startup timeout: 30s. Log cap: 100KB. Documented assumptions.
+  - internal=True removed from Docker network: bridge network already isolates from LAN;
+    internal=True blocked host→container health-check traffic. Documented in docker_manager.py.
+  - No automatic retry on import failure: 1 attempt, then import_failed. Documented assumption.
+  - Error strings truncated to 2KB before storing in isolation_error (prevents unbounded DB growth).
+Known limitations:
+  - MSBuild/flutter run caveat from Phase 1 still present (pre-existing).
+  - Isolation tests require Docker Desktop running; skippable with -m "not docker".
+  - Target containers can reach the internet during runtime (bridge network, no outbound firewall).
+    Outbound internet restriction can be added via iptables rules or a custom Docker network with
+    specific routing — deferred as hardening to Phase 12 per docs/SECURITY.md.
+Next recommended task: Begin Phase 4 (Builder agent) — static analysis of the isolated target's
+API surface, route discovery, OpenAPI parsing, and producing structured target context.
 ```
 
 ## Do not record here
