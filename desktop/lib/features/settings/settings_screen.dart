@@ -1,7 +1,91 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_theme.dart';
+import '../../providers/projects_provider.dart';
+import '../../services/health_service.dart';
 import '../shared/page_header.dart';
+
+/// Live backend connectivity, resolved from the real /api/health probe rather
+/// than assumed. Distinguishes "no backend" from "backend up but the auth
+/// token file is missing", because those need different fixes.
+class _ConnectionStatusCard extends ConsumerWidget {
+  const _ConnectionStatusCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final statusAsync = ref.watch(backendStatusProvider);
+
+    final (icon, color, title, detail) = switch (statusAsync) {
+      AsyncData(:final value) => switch (value) {
+          BackendStatus.connected => (
+              Icons.check_circle_outline,
+              SeverityColors.success,
+              'Connected',
+              'The backend is reachable and this client is authenticated.',
+            ),
+          BackendStatus.tokenMissing => (
+              Icons.key_off_outlined,
+              SeverityColors.warning,
+              'Auth token missing',
+              'The backend is running but no token file was found. Restart the '
+                  'backend, then restart this app so it picks up the new token.',
+            ),
+          BackendStatus.disconnected => (
+              Icons.cloud_off_outlined,
+              SeverityColors.error,
+              'Not connected',
+              'No response from the backend. Start it with: uvicorn app.main:app '
+                  '--host 127.0.0.1 --port 8000',
+            ),
+        },
+      AsyncError() => (
+          Icons.error_outline,
+          SeverityColors.error,
+          'Connection check failed',
+          'Could not determine backend status.',
+        ),
+      _ => (
+          Icons.hourglass_empty,
+          AppColors.textDisabled,
+          'Checking…',
+          'Probing the backend health endpoint.',
+        ),
+    };
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 20, color: color),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: Theme.of(context)
+                      .textTheme
+                      .headlineMedium
+                      ?.copyWith(color: color),
+                ),
+                const SizedBox(height: 4),
+                Text(detail, style: Theme.of(context).textTheme.bodySmall),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -13,9 +97,16 @@ class SettingsScreen extends ConsumerWidget {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const PageHeader(
+          PageHeader(
             title: 'Settings',
             subtitle: 'Application configuration',
+            actions: [
+              IconButton(
+                onPressed: () => ref.invalidate(backendStatusProvider),
+                icon: const Icon(Icons.refresh, size: 19),
+                tooltip: 'Re-check connection',
+              ),
+            ],
           ),
           Expanded(
             child: SingleChildScrollView(
@@ -23,6 +114,8 @@ class SettingsScreen extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  const _ConnectionStatusCard(),
+                  const SizedBox(height: 24),
                   _SettingsSection(
                     title: 'Backend',
                     children: [

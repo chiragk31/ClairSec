@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../models/patch.dart';
 
@@ -36,14 +37,18 @@ class DiffViewer extends StatelessWidget {
                 const Icon(Icons.insert_drive_file_outlined,
                     size: 13, color: AppColors.textSecondary),
                 const SizedBox(width: 6),
-                Text(
-                  fileDiff.path,
-                  style: AppTheme.monoStyle(
-                    fontSize: 12,
-                    color: AppColors.textPrimary,
-                    fontWeight: FontWeight.w600,
+                Expanded(
+                  child: Text(
+                    fileDiff.path,
+                    style: AppTheme.monoStyle(
+                      fontSize: 12,
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
+                _CopyDiffButton(diff: fileDiff.diff),
               ],
             ),
           ),
@@ -62,6 +67,60 @@ class DiffViewer extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Copies the raw unified diff so it can be pasted into a review tool or
+/// applied manually with `git apply`.
+class _CopyDiffButton extends StatefulWidget {
+  final String diff;
+  const _CopyDiffButton({required this.diff});
+
+  @override
+  State<_CopyDiffButton> createState() => _CopyDiffButtonState();
+}
+
+class _CopyDiffButtonState extends State<_CopyDiffButton> {
+  bool _copied = false;
+
+  Future<void> _copy() async {
+    await Clipboard.setData(ClipboardData(text: widget.diff));
+    if (!mounted) return;
+    setState(() => _copied = true);
+    await Future<void>.delayed(const Duration(seconds: 2));
+    if (mounted) setState(() => _copied = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: _copied ? 'Copied' : 'Copy diff',
+      child: InkWell(
+        onTap: _copy,
+        borderRadius: BorderRadius.circular(4),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                _copied ? Icons.check : Icons.copy_all_outlined,
+                size: 13,
+                color: _copied ? SeverityColors.success : AppColors.textSecondary,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                _copied ? 'Copied' : 'Copy',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color:
+                          _copied ? SeverityColors.success : AppColors.textSecondary,
+                    ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

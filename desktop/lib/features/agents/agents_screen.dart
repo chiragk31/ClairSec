@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../core/theme/app_theme.dart';
+import '../../models/scan_summary.dart';
+import '../../providers/scans_provider.dart';
 import '../shared/page_header.dart';
 import '../shared/empty_state.dart';
 
@@ -24,11 +28,14 @@ class AgentsScreen extends StatelessWidget {
   }
 }
 
-class _AgentsContent extends StatelessWidget {
+class _AgentsContent extends ConsumerWidget {
   const _AgentsContent();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final scans = ref.watch(scanListProvider);
+    final latest = scans.isEmpty ? null : scans.first;
+
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -36,16 +43,112 @@ class _AgentsContent extends StatelessWidget {
         children: [
           _AgentRoleCards(),
           const SizedBox(height: 24),
-          const Expanded(
-            child: EmptyState(
-              icon: Icons.smart_toy_outlined,
-              title: 'No agent activity',
-              description:
-                  'Structured agent events — tasks, actions, results, and '
-                  'durations — will appear here during and after a scan. '
-                  'Raw chain-of-thought is not exposed.',
+          Expanded(
+            child: latest == null
+                ? const EmptyState(
+                    icon: Icons.smart_toy_outlined,
+                    title: 'No agent activity',
+                    description:
+                        'Structured agent events — tasks, actions, results, and '
+                        'durations — will appear here during and after a scan. '
+                        'Raw chain-of-thought is not exposed.',
+                  )
+                : _LatestRunPanel(scan: latest),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Summary of the most recent pipeline run. Shows the stage the backend
+/// reported and the confirmed-finding count — operational detail only, never
+/// model reasoning (DESIGN.md §9).
+class _LatestRunPanel extends StatelessWidget {
+  final ScanSummary scan;
+  const _LatestRunPanel({required this.scan});
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Most recent run — ${scan.projectName}',
+                    style: Theme.of(context).textTheme.headlineMedium,
+                  ),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () => context.go('/scans/${scan.id}'),
+                  icon: const Icon(Icons.open_in_new, size: 15),
+                  label: const Text('Open scan'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              scan.id,
+              style:
+                  AppTheme.monoStyle(fontSize: 11, color: AppColors.textDisabled),
+            ),
+            const SizedBox(height: 16),
+            const Divider(height: 1),
+            const SizedBox(height: 16),
+            _Row(label: 'Pipeline state', value: scan.state.label),
+            _Row(
+              label: 'Reported stage',
+              value: scan.stage.isEmpty ? '—' : scan.stage,
+            ),
+            _Row(
+              label: 'Findings confirmed',
+              value: '${scan.findingsConfirmed}',
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Per-agent progress for this run is shown on the scan view. '
+              'Full event-level streaming arrives with the live agent UI.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _Row extends StatelessWidget {
+  final String label;
+  final String value;
+  const _Row({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 160,
+            child: Text(
+              label,
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: AppColors.textDisabled,
+                  ),
             ),
           ),
+          Text(value, style: Theme.of(context).textTheme.bodyLarge),
         ],
       ),
     );
