@@ -36,6 +36,88 @@ from app.isolation.errors import IsolationError
 
 logger = logging.getLogger(__name__)
 
+# How many trailing lines of a failed build to surface. The failure is always
+# at the end, so this is a tail, never a head.
+_BUILD_LOG_TAIL_LINES = 60
+
+# Packages that only exist on Windows. A requirements.txt produced by
+# `pip freeze` on Windows commonly contains these, and they can never install
+# inside a Linux container — the single most frequent import failure for
+# real-world projects.
+_WINDOWS_ONLY_PACKAGES = (
+    "pywin32",
+    "pypiwin32",
+    "pywinpty",
+    "wincertstore",
+    "win32-setctime",
+    "windows-curses",
+    "winshell",
+)
+
+
+def _diagnose_build_failure(log_lines: list[str]) -> str | None:
+    """
+    Produce a short, human-readable explanation of why a build failed.
+
+    Matches on well-known pip/Docker failure signatures. Returns None when the
+    cause is not recognised — an honest "no idea" is better than a confident
+    wrong guess, and the raw log is shown either way.
+    """
+    blob = "\n".join(log_lines).lower()
+
+    for pkg in _WINDOWS_ONLY_PACKAGES:
+        if pkg in blob:
+            return (
+                f"the dependency list contains '{pkg}', which is a Windows-only "
+                "package and cannot be installed inside a Linux container. This "
+                "usually means requirements.txt was produced by 'pip freeze' on "
+                "Windows. Remove the Windows-only entries and retry."
+            )
+
+    if "no matching distribution found" in blob or "could not find a version" in blob:
+        return (
+            "pip could not find a distribution matching one of the requested "
+            "package versions. The package may not exist, may not support "
+            "Python 3.11, or may not publish a Linux build."
+        )
+
+    if any(
+        marker in blob
+        for marker in (
+            "gcc: command not found",
+            "error: command 'gcc' failed",
+            "unable to execute 'gcc'",
+            "requires a c compiler",
+            "python.h: no such file or directory",
+        )
+    ):
+        return (
+            "a dependency needs to be compiled from source, but the slim base "
+            "image ships no C toolchain. Prefer a package version that publishes "
+            "a prebuilt Linux wheel."
+        )
+
+    if "resolutionimpossible" in blob or "conflicting dependencies" in blob:
+        return (
+            "the dependency versions conflict with each other and pip could not "
+            "resolve a compatible set."
+        )
+
+    if "killed" in blob and "pip" in blob:
+        return (
+            "the install process was killed, most likely by hitting the "
+            "container memory limit while resolving a large dependency set."
+        )
+
+    if "failed to resolve reference" in blob or "manifest unknown" in blob:
+        return (
+            "the pinned base image digest could not be pulled. Re-resolve it "
+            "with: docker pull python:3.11-slim && docker inspect "
+            "--format='{{index .RepoDigests 0}}' python:3.11-slim"
+        )
+
+    return None
+
 _IMAGE_PREFIX = "clairsec-image"
 _CONTAINER_PREFIX = "clairsec-target"
 _PROXY_PREFIX = "clairsec-proxy"
@@ -322,18 +404,32 @@ class DockerManager:
             return tag
 
         except docker.errors.BuildError as exc:
-            err_lines = []
-            for log_entry in exc.build_log:
-                if "stream" in log_entry:
-                    err_lines.append(str(log_entry["stream"]).strip())
-                if len(err_lines) >= 50:
-                    err_lines.append("... (truncated)")
-                    break
-            build_output = "\n".join(filter(None, err_lines))
-            raise IsolationError(
-                f"Docker build failed for project {project_id}: {exc.msg}\n"
-                f"Build output (last 50 lines):\n{build_output}"
-            ) from exc
+            # Collect the whole stream, then keep the TAIL. The build failure is
+            # always at the end; keeping the head (as this previously did) threw
+            # away the only lines that explain why the build failed.
+            all_lines = [
+                str(entry["stream"]).rstrip()
+                for entry in exc.build_log
+                if isinstance(entry, dict) and "stream" in entry
+            ]
+            all_lines = [line for line in all_lines if line.strip()]
+
+            tail = all_lines[-_BUILD_LOG_TAIL_LINES:]
+            omitted = len(all_lines) - len(tail)
+            build_output = "\n".join(tail)
+            if omitted > 0:
+                build_output = (
+                    f"... ({omitted} earlier lines omitted)\n{build_output}"
+                )
+
+            diagnosis = _diagnose_build_failure(all_lines)
+            message = f"Docker build failed for project {project_id}: {exc.msg}\n"
+            if diagnosis:
+                message += f"\nLikely cause: {diagnosis}\n"
+            message += (
+                f"\nBuild output (last {len(tail)} lines):\n{build_output}"
+            )
+            raise IsolationError(message) from exc
 
         except Exception as exc:  # noqa: BLE001
             raise IsolationError(
