@@ -30,6 +30,8 @@ from pathlib import Path
 import docker
 import docker.errors
 import httpx
+from requests.exceptions import ConnectionError as ReqConnectionError
+from requests.exceptions import ReadTimeout
 
 from app.core.config import settings
 from app.isolation.errors import IsolationError
@@ -430,6 +432,24 @@ class DockerManager:
                 f"\nBuild output (last {len(tail)} lines):\n{build_output}"
             )
             raise IsolationError(message) from exc
+
+        except (ReadTimeout, ReqConnectionError) as exc:
+            # The Docker SDK's `timeout` is an HTTP read timeout on the daemon
+            # socket, so a slow build surfaces here as a transport error rather
+            # than a BuildError. Without this branch it fell through to the
+            # generic handler and reported a raw socket error, which gives no
+            # indication that the real problem was simply "not enough time".
+            raise IsolationError(
+                f"Docker build timed out for project {project_id} after "
+                f"{settings.docker_build_timeout}s.\n"
+                "\nLikely cause: the project has a large dependency list and pip "
+                "needs longer than the configured build timeout. This is a "
+                "configuration limit, not a fault in the project.\n"
+                "\nIncrease DOCKER_BUILD_TIMEOUT (seconds) in backend/.env and "
+                "isolate again. Dependency-heavy projects can need several "
+                "minutes on a first build; subsequent builds reuse Docker's "
+                "layer cache and are much faster."
+            ) from exc
 
         except Exception as exc:  # noqa: BLE001
             raise IsolationError(

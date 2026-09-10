@@ -31,11 +31,17 @@ class Settings(BaseSettings):
     docker_mem_limit: str = "256m"
     docker_nano_cpus: int = 500_000_000  # 0.5 CPU expressed as nanocpus
 
-    # Build timeout (seconds). A hung pip install must not block the platform.
-    docker_build_timeout: int = 120
+    # Build timeout (seconds). A hung pip install must not block the platform,
+    # but this also has to accommodate real projects: the benchmark fixture has
+    # 5 dependencies and builds in ~30s, while a typical application with 100+
+    # pinned packages needs several minutes to download and install on a cold
+    # cache. 120s was too aggressive and failed legitimate projects.
+    docker_build_timeout: int = 600
 
-    # Startup timeout (seconds). Time allowed for the container to pass health check.
-    docker_startup_timeout: int = 30
+    # Startup timeout (seconds). Time allowed for the container to pass health
+    # check. Applications that build indexes or warm caches on boot need more
+    # than the original 30s.
+    docker_startup_timeout: int = 90
 
     # Maximum bytes captured from container stdout/stderr per retrieval.
     # 100 KB is enough for debugging without risking unbounded log accumulation.

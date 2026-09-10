@@ -67,7 +67,10 @@ class _IsolationControlsState extends ConsumerState<IsolationControls> {
   Future<void> _pollJob(String jobId) async {
     final service = ref.read(isolationServiceProvider);
     const interval = Duration(seconds: 2);
-    const maxAttempts = 120; // ~4 minutes ceiling
+    // Must outlast the backend's own build timeout (DOCKER_BUILD_TIMEOUT,
+    // default 600s), otherwise the UI reports a timeout while the build is
+    // still legitimately running and the two disagree about what happened.
+    const maxAttempts = 360; // ~12 minutes ceiling
 
     for (var i = 0; i < maxAttempts; i++) {
       await Future<void>.delayed(interval);
