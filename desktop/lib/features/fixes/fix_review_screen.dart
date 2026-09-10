@@ -9,6 +9,7 @@ import '../shared/page_header.dart';
 import '../shared/empty_state.dart';
 import '../vulnerabilities/widgets/status_badges.dart';
 import 'widgets/diff_viewer.dart';
+import 'widgets/verification_panel.dart';
 
 /// Fix Review — DESIGN.md §8 split layout:
 ///
@@ -187,6 +188,10 @@ class _FixPane extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
+          if (p.verification != null) ...[
+            VerificationPanel(proof: p.verification!),
+            const SizedBox(height: 20),
+          ],
           if (p.rootCause.isNotEmpty) _Block(title: 'Root cause', body: p.rootCause),
           if (p.rationale.isNotEmpty) _Block(title: 'Rationale', body: p.rationale),
           Text(

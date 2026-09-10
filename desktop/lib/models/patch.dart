@@ -68,6 +68,88 @@ class PatchValidation {
   bool get allPassed => astParsed && pathCheckPassed && sizeOk;
 }
 
+/// Proof that a fix actually works, from the re-test stage.
+///
+/// The platform's central claim is the dual criterion (METHODOLOGY.md §5):
+/// a fix counts only if the original exploit is blocked AND the application's
+/// legitimate functional tests still pass. Both halves are kept separate here
+/// precisely so they can be shown separately — collapsing them into one
+/// "fixed" badge is what makes automated-repair claims unverifiable.
+class VerificationProof {
+  final String outcome; // fixed | regressed | unresolved | unverified
+  final String outcomeReason;
+  final bool rebuildOk;
+
+  final bool exploitRan;
+  final bool stillExploitable;
+
+  final bool suiteRan;
+  final int passed;
+  final int failed;
+  final int total;
+  final List<String> newlyFailing;
+
+  final bool variantRan;
+  final bool variantExploited;
+  final String variantKind;
+
+  final double durationSeconds;
+
+  const VerificationProof({
+    required this.outcome,
+    required this.outcomeReason,
+    required this.rebuildOk,
+    required this.exploitRan,
+    required this.stillExploitable,
+    required this.suiteRan,
+    required this.passed,
+    required this.failed,
+    required this.total,
+    required this.newlyFailing,
+    required this.variantRan,
+    required this.variantExploited,
+    required this.variantKind,
+    required this.durationSeconds,
+  });
+
+  static VerificationProof? fromJson(Map<String, dynamic>? json) {
+    if (json == null) return null;
+    final exploit = (json['originalExploit'] as Map<String, dynamic>?) ?? const {};
+    final suite = (json['functionalSuite'] as Map<String, dynamic>?) ?? const {};
+    final variant = (json['variantAttack'] as Map<String, dynamic>?) ?? const {};
+
+    return VerificationProof(
+      outcome: json['outcome'] as String? ?? 'unverified',
+      outcomeReason: json['outcomeReason'] as String? ?? '',
+      rebuildOk: json['rebuildOk'] as bool? ?? false,
+      exploitRan: exploit['ran'] as bool? ?? false,
+      stillExploitable: exploit['exploited'] as bool? ?? false,
+      suiteRan: suite['ran'] as bool? ?? false,
+      passed: suite['passed'] as int? ?? 0,
+      failed: suite['failed'] as int? ?? 0,
+      total: suite['total'] as int? ?? 0,
+      newlyFailing:
+          ((suite['newlyFailing'] as List<dynamic>?) ?? const [])
+              .map((e) => e.toString())
+              .toList(),
+      variantRan: variant['ran'] as bool? ?? false,
+      variantExploited: variant['exploited'] as bool? ?? false,
+      variantKind: variant['variantKind'] as String? ?? '',
+      durationSeconds:
+          (json['durationSeconds'] as num?)?.toDouble() ?? 0.0,
+    );
+  }
+
+  /// The exploit no longer succeeds.
+  bool get exploitBlocked => exploitRan && !stillExploitable;
+
+  /// Nothing that previously worked is now broken.
+  bool get functionalityIntact => suiteRan && failed == 0;
+
+  /// Both halves of the dual criterion hold.
+  bool get fullyVerified => exploitBlocked && functionalityIntact;
+}
+
 /// A generated fix — the Fixer's proposed patch for one finding
 /// (DATA_MODEL.md §3 `patches`, DESIGN.md §8 Fix Review).
 class Patch {
@@ -82,6 +164,7 @@ class Patch {
   final List<FileDiff> files;
   final DiffStats diffStats;
   final PatchValidation validation;
+  final VerificationProof? verification;
 
   const Patch({
     required this.id,
@@ -95,6 +178,7 @@ class Patch {
     required this.diffStats,
     required this.validation,
     this.applyError,
+    this.verification,
   });
 
   factory Patch.fromJson(Map<String, dynamic> json) => Patch(
@@ -114,5 +198,8 @@ class Patch {
             DiffStats.fromJson(json['diffStats'] as Map<String, dynamic>?),
         validation:
             PatchValidation.fromJson(json['validation'] as Map<String, dynamic>?),
+        verification: VerificationProof.fromJson(
+          json['verification'] as Map<String, dynamic>?,
+        ),
       );
 }

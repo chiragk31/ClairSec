@@ -312,11 +312,50 @@ class ScanService:
         """
         patches = await self._patch_repo.list_by_scan(scan_id)
         findings = await self._finding_repo.list_by_scan(scan_id)
+        verifications = await self._verification_repo.list_by_scan(scan_id)
         finding_by_id = {f.id: f for f in findings}
+        ver_by_finding = {v.finding_id: v for v in verifications}
 
         results: list[dict[str, Any]] = []
         for p in patches:
             finding = finding_by_id.get(p.finding_id)
+            ver = ver_by_finding.get(p.finding_id)
+
+            # Surface the full verification proof, not just a collapsed status.
+            # "Exploit blocked AND functional suite still passing" is the
+            # platform's central claim (METHODOLOGY.md §5) and it is only
+            # credible if the individual results are visible.
+            verification: dict[str, Any] | None = None
+            if ver:
+                outcome = (
+                    ver.outcome.value
+                    if hasattr(ver.outcome, "value")
+                    else str(ver.outcome)
+                )
+                verification = {
+                    "outcome": outcome,
+                    "outcomeReason": ver.outcome_reason,
+                    "rebuildOk": ver.rebuild_ok,
+                    "originalExploit": {
+                        "ran": ver.original_exploit.ran,
+                        "exploited": ver.original_exploit.exploited,
+                        "rationale": ver.original_exploit.rationale,
+                    },
+                    "functionalSuite": {
+                        "ran": ver.functional_suite.ran,
+                        "passed": ver.functional_suite.passed,
+                        "failed": ver.functional_suite.failed,
+                        "total": ver.functional_suite.total,
+                        "newlyFailing": list(ver.functional_suite.newly_failing),
+                    },
+                    "variantAttack": {
+                        "ran": ver.variant_attack.ran,
+                        "exploited": ver.variant_attack.exploited,
+                        "variantKind": ver.variant_attack.variant_kind,
+                        "rationale": ver.variant_attack.rationale,
+                    },
+                    "durationSeconds": ver.duration_s,
+                }
             results.append(
                 {
                     "id": p.id,
@@ -350,6 +389,7 @@ class ScanService:
                         "pathCheckPassed": p.validation.path_check_passed,
                         "sizeOk": p.validation.size_ok,
                     },
+                    "verification": verification,
                 }
             )
         return results
