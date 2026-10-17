@@ -34,10 +34,12 @@ final scanDetailProvider =
     agentCards: _cardsForStage(scan, confirmedCount: confirmed.length),
     events: const [],
     summary: ScanRunSummary(
-      findingsDiscovered: findings.length,
-      findingsConfirmed: confirmed.length,
-      fixesGenerated: patched,
-      fixesVerified: verified,
+      endpointsDiscovered: scan.endpointsDiscovered,
+      testsExecuted: scan.testsExecuted > 0 ? scan.testsExecuted : findings.length,
+      findingsDiscovered: scan.findingsDiscovered > 0 ? scan.findingsDiscovered : findings.length,
+      findingsConfirmed: confirmed.isNotEmpty ? confirmed.length : scan.findingsConfirmed,
+      fixesGenerated: patched > 0 ? patched : scan.fixesGenerated,
+      fixesVerified: verified > 0 ? verified : scan.fixesVerified,
     ),
   );
 });
@@ -82,7 +84,17 @@ Map<AgentRole, AgentCardState> _cardsForStage(
         currentTask: i == activeIndex && !finished
             ? (scan.stage.isEmpty ? null : scan.stage)
             : null,
-        eventCount: i == 2 ? confirmedCount : 0,
+        eventCount: switch (i) {
+          0 => scan.endpointsDiscovered,
+          1 => scan.testsExecuted > 0 ? scan.testsExecuted : scan.findingsDiscovered,
+          2 => confirmedCount > 0 ? confirmedCount : scan.findingsConfirmed,
+          3 => scan.fixesVerified > 0 ? scan.fixesVerified : scan.fixesGenerated,
+          _ => 0,
+        },
+        elapsed: Duration(
+          milliseconds:
+              ((scan.stageDurations[_pipelineOrder[i].name] ?? 0.0) * 1000).toInt(),
+        ),
       ),
   };
 }

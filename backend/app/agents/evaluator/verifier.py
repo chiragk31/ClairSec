@@ -87,7 +87,11 @@ class EvidenceVerifier:
 
         # Detect requesting principal from oracle_result evidence, request principal_id, or authorization headers
         oracle_ev = evidence.oracle_result.get("evidence") or {}
-        requester_id = oracle_ev.get("request_principal") or req.get("principal_id")
+        requester_id = (
+            oracle_ev.get("request_principal")
+            or req.get("principal_id")
+            or getattr(evidence, "principal_id", None)
+        )
         if not requester_id:
             headers = req.get("headers") or {}
             auth_val = ""
@@ -107,6 +111,8 @@ class EvidenceVerifier:
             or res_body.get("user_id")
             or res_body.get("owner")
             or res_body.get("creator_id")
+            or res_body.get("id")
+            or res_body.get("username")
         )
 
         if not owner_val:

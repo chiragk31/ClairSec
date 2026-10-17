@@ -15,9 +15,8 @@ Responsibilities:
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 import time
-from typing import Any
+from pathlib import Path
 
 from app.agents.attacker.repository import TestCaseRepository
 from app.agents.evaluator.schemas import EvaluatedFinding
@@ -68,6 +67,7 @@ class VerifierAgent:
         scan_id: str,
         target_handle: TargetHandle | None = None,
         modified_workspace: Path | None = None,
+        entry_point: str | None = None,
     ) -> VerificationRecord:
         """
         Verify a single patched finding against the rebuilt target:
@@ -87,11 +87,14 @@ class VerifierAgent:
                 if modified_workspace is None:
                     modified_workspace = self._workspace_manager.get_modified_workspace_path(patch.project_id)
 
-                handle = LocalWorkspaceTargetHandle(workspace_dir=modified_workspace)
+                handle = LocalWorkspaceTargetHandle(
+                    workspace_dir=modified_workspace,
+                    entry_point=entry_point,
+                )
                 own_handle = True
                 try:
                     await handle.start()
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001
                     duration_s = time.perf_counter() - t0
                     record = VerificationRecord(
                         finding_id=finding.id,
@@ -190,6 +193,7 @@ class VerifierAgent:
         scan_id: str,
         target_handle: TargetHandle | None = None,
         modified_workspace: Path | None = None,
+        entry_point: str | None = None,
     ) -> VerificationScanSummary:
         """
         Verify all findings and patches in a scan run.
@@ -200,28 +204,103 @@ class VerifierAgent:
         unresolved_count = 0
         unverified_count = 0
 
+        # Filter to confirmed findings only
+        confirmed_findings = [
+            f for f in findings
+            if getattr(getattr(f, "status", None), "value", str(getattr(f, "status", ""))) == "confirmed"
+        ]
+
         # Map patches by finding_id
         patch_map = {p.finding_id: p for p in patches}
+        applied_patches = [p for p in patches if p.applied]
+
+        # If there are zero confirmed findings to verify, return clean empty summary
+        if not confirmed_findings:
+            logger.info(
+                "Verification: zero confirmed findings to verify for scan %s (patches=%d). Skipping verification.",
+                scan_id[:8],
+                len(patches),
+                extra={
+                    "event": "scan.verifier.no_findings",
+                    "findings_count": 0,
+                    "patches_count": len(patches),
+                },
+            )
+            return VerificationScanSummary(
+                scan_id=scan_id,
+                records=[],
+                fixed_count=0,
+                regressed_count=0,
+                unresolved_count=0,
+                unverified_count=0,
+            )
+
+        # If there are zero applied patches, skip target startup cleanly and mark confirmed findings as unresolved
+        if not applied_patches:
+            logger.info(
+                "Verification: zero applied patches to verify for scan %s (findings=%d, patches=%d). Skipping target startup.",
+                scan_id[:8],
+                len(confirmed_findings),
+                len(patches),
+                extra={
+                    "event": "scan.verifier.no_patches",
+                    "findings_count": len(confirmed_findings),
+                    "patches_count": len(patches),
+                },
+            )
+            for finding in confirmed_findings:
+                patch = patch_map.get(finding.id)
+                record = VerificationRecord(
+                    finding_id=finding.id,
+                    patch_id=patch.id if patch else "none",
+                    scan_id=scan_id,
+                    rebuild_ok=False,
+                    original_exploit=OriginalExploitResult(ran=False, exploited=True, rationale="No patch applied"),
+                    functional_suite=FunctionalSuiteResult(ran=False),
+                    variant_attack=VariantAttackResult(ran=False, exploited=False),
+                    outcome=VerificationOutcome.UNRESOLVED,
+                    outcome_reason="no_applied_patch",
+                    duration_s=0.0,
+                )
+                saved = await self._verification_repo.create(record)
+                records.append(saved)
+                unresolved_count += 1
+
+            return VerificationScanSummary(
+                scan_id=scan_id,
+                records=records,
+                fixed_count=0,
+                regressed_count=0,
+                unresolved_count=unresolved_count,
+                unverified_count=0,
+            )
 
         # Start a shared target handle for the modified workspace if not provided
         own_handle = False
         handle = target_handle
 
         if handle is None:
-            if modified_workspace is None and patches:
-                modified_workspace = self._workspace_manager.get_modified_workspace_path(patches[0].project_id)
+            if modified_workspace is None and applied_patches:
+                modified_workspace = self._workspace_manager.get_modified_workspace_path(applied_patches[0].project_id)
 
             if modified_workspace is not None:
-                handle = LocalWorkspaceTargetHandle(workspace_dir=modified_workspace)
+                handle = LocalWorkspaceTargetHandle(
+                    workspace_dir=modified_workspace,
+                    entry_point=entry_point,
+                )
                 own_handle = True
                 try:
                     await handle.start()
                 except Exception as exc:
-                    logger.error("Failed to start modified workspace target for scan: %s", exc)
-                    handle = None
+                    logger.exception(
+                        "Failed to start modified workspace target for scan %s",
+                        scan_id[:8],
+                        extra={"event": "scan.verifier.target_start_failed", "error": str(exc)},
+                    )
+                    raise
 
         try:
-            for finding in findings:
+            for finding in confirmed_findings:
                 patch = patch_map.get(finding.id)
                 if not patch or not patch.applied:
                     # No applied patch exists for finding
@@ -248,6 +327,7 @@ class VerifierAgent:
                     scan_id=scan_id,
                     target_handle=handle,
                     modified_workspace=modified_workspace,
+                    entry_point=entry_point,
                 )
                 records.append(record)
 

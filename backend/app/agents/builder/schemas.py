@@ -24,6 +24,17 @@ class RouteItem(BaseModel):
     extra_fields_allowed: bool = False
     is_debug_or_internal: bool = False
 
+    # Structured OpenAPI test plan attributes
+    path_params: list[dict[str, Any]] = Field(default_factory=list)
+    query_params: list[dict[str, Any]] = Field(default_factory=list)
+    request_body_schema: dict[str, Any] | None = None
+    request_body_content_type: str = "application/json"
+    security_requirements: list[dict[str, Any]] = Field(default_factory=list)
+    operation_id: str | None = None
+    applicable_categories: list[str] = Field(default_factory=list)
+    can_generate_test: bool = True
+    skip_reason: str | None = None
+
 
 class AuthSemanticInventory(BaseModel):
     """Narrow schema for quarantined LLM extraction turn (LLM.md §6)."""
@@ -65,3 +76,9 @@ class AgentContext(BaseModel):
     principals: list[TestPrincipal] = Field(default_factory=list)
     canary_clean: bool = True
     created_at: str = ""
+
+    @property
+    def auth_scheme(self) -> str:
+        if self.auth_schemes:
+            return ", ".join(self.auth_schemes)
+        return "none"

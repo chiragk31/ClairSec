@@ -6,8 +6,11 @@ from __future__ import annotations
 import pytest
 
 from app.security.oracles import (
+    BFLAOracle,
     BOLAOracle,
     BOPLAMassAssignOracle,
+    PathTraversalOracle,
+    SQLInjectionOracle,
     SecurityMisconfigOracle,
 )
 
@@ -136,3 +139,70 @@ def test_misconfig_oracle_fires_on_wildcard_cors_with_credentials():
     )
     assert result.fired is True
     assert "Wildcard CORS origin" in result.rationale
+
+
+def test_bfla_oracle_fires_when_unprivileged_accesses_admin():
+    result = BFLAOracle.evaluate(
+        request_principal_role="member",
+        endpoint_path="/admin/users",
+        response_status=200,
+        response_body={"users": ["alice", "bob"]},
+    )
+    assert result.fired is True
+    assert result.rule_id == "ORACLE-BFLA-001"
+    assert result.category == "BFLA"
+    assert result.cwe == "CWE-285"
+    assert "BFLA confirmed" in result.rationale
+
+
+def test_bfla_oracle_does_not_fire_on_403_or_401():
+    result = BFLAOracle.evaluate(
+        request_principal_role="member",
+        endpoint_path="/admin/users",
+        response_status=403,
+        response_body={"detail": "Admin required"},
+    )
+    assert result.fired is False
+    assert "enforced" in result.rationale
+
+
+def test_path_traversal_oracle_fires_on_source_code_leak():
+    result = PathTraversalOracle.evaluate(
+        endpoint_path="/download?file=../../app/main.py",
+        response_status=200,
+        response_body="from fastapi import FastAPI\napp = FastAPI()",
+    )
+    assert result.fired is True
+    assert result.category == "PATH_TRAVERSAL"
+    assert result.cwe == "CWE-22"
+    assert "Path Traversal confirmed" in result.rationale
+
+
+def test_path_traversal_oracle_does_not_fire_on_404():
+    result = PathTraversalOracle.evaluate(
+        endpoint_path="/download?file=../../app/main.py",
+        response_status=404,
+        response_body={"detail": "File not found"},
+    )
+    assert result.fired is False
+
+
+def test_sqli_oracle_fires_on_syntax_error():
+    result = SQLInjectionOracle.evaluate(
+        endpoint_path="/items?search=' OR '1'='1",
+        response_status=500,
+        response_body="sqlite3.OperationalError: unrecognized token near '1'",
+    )
+    assert result.fired is True
+    assert result.category == "SQL_INJECTION"
+    assert result.cwe == "CWE-89"
+    assert "SQL Injection confirmed" in result.rationale
+
+
+def test_sqli_oracle_does_not_fire_on_clean_response():
+    result = SQLInjectionOracle.evaluate(
+        endpoint_path="/items?search=apples",
+        response_status=200,
+        response_body={"items": []},
+    )
+    assert result.fired is False

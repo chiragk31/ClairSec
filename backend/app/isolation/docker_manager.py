@@ -135,6 +135,7 @@ FROM {base_image}
 
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONPATH=/app
 
 WORKDIR /app
 
@@ -155,6 +156,7 @@ FROM {base_image}
 
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONPATH=/app
 
 WORKDIR /app
 
@@ -346,7 +348,15 @@ class DockerManager:
             user_directive = (
                 "\n# Drop to non-root user (THREAT_MODEL C3.2)\n"
                 "RUN useradd -m -u 10001 appuser && chown -R appuser:appuser /app\n"
+                f"RUN mkdir -p {settings.docker_sqlite_data_dir} && "
+                f"chown -R appuser:appuser {settings.docker_sqlite_data_dir} && "
+                f"chmod 777 {settings.docker_sqlite_data_dir}\n"
                 "USER appuser\n"
+            )
+        else:
+            user_directive = (
+                f"\nRUN mkdir -p {settings.docker_sqlite_data_dir} && "
+                f"chmod 777 {settings.docker_sqlite_data_dir}\n"
             )
 
         if dependency_file and dependency_file.endswith(".txt"):
@@ -386,8 +396,18 @@ class DockerManager:
         """
         tag = self.image_tag(project_id)
         self._write_dockerfile(workspace_path, entry_point, dependency_file)
+        dockerfile_path = workspace_path / "Dockerfile"
 
-        logger.info("Building Docker image %s from %s", tag, workspace_path)
+        t0 = time.perf_counter()
+        logger.info(
+            "Building Docker image %s from %s (dockerfile=%s, entrypoint=%s, timeout=%ds)",
+            tag,
+            workspace_path,
+            dockerfile_path,
+            entry_point,
+            settings.docker_build_timeout,
+            extra={"event": "docker.build.started"},
+        )
         try:
             _image, build_logs = self._client.images.build(
                 path=str(workspace_path),
@@ -402,10 +422,17 @@ class DockerManager:
                     line = str(chunk["stream"]).strip()
                     if line:
                         logger.debug("[build:%s] %s", project_id[:8], line)
-            logger.info("Successfully built image %s", tag)
+            elapsed = time.perf_counter() - t0
+            logger.info(
+                "Successfully built image %s in %.3fs",
+                tag,
+                elapsed,
+                extra={"event": "docker.build.succeeded"},
+            )
             return tag
 
         except docker.errors.BuildError as exc:
+            elapsed = time.perf_counter() - t0
             # Collect the whole stream, then keep the TAIL. The build failure is
             # always at the end; keeping the head (as this previously did) threw
             # away the only lines that explain why the build failed.
@@ -425,6 +452,18 @@ class DockerManager:
                 )
 
             diagnosis = _diagnose_build_failure(all_lines)
+            logger.error(
+                "Docker build failed for project %s (tag=%s, dockerfile=%s) after %.3fs: %s\n"
+                "Likely cause: %s\nBuild output (tail):\n%s",
+                project_id[:8],
+                tag,
+                dockerfile_path,
+                elapsed,
+                exc.msg,
+                diagnosis or "None",
+                build_output,
+                extra={"event": "docker.build.failed"},
+            )
             message = f"Docker build failed for project {project_id}: {exc.msg}\n"
             if diagnosis:
                 message += f"\nLikely cause: {diagnosis}\n"
@@ -434,6 +473,16 @@ class DockerManager:
             raise IsolationError(message) from exc
 
         except (ReadTimeout, ReqConnectionError) as exc:
+            elapsed = time.perf_counter() - t0
+            logger.error(
+                "Docker build timed out after %.3fs for project %s (tag=%s, dockerfile=%s, limit=%ds)",
+                elapsed,
+                project_id[:8],
+                tag,
+                dockerfile_path,
+                settings.docker_build_timeout,
+                extra={"event": "docker.build.timed_out"},
+            )
             # The Docker SDK's `timeout` is an HTTP read timeout on the daemon
             # socket, so a slow build surfaces here as a transport error rather
             # than a BuildError. Without this branch it fell through to the
@@ -452,6 +501,15 @@ class DockerManager:
             ) from exc
 
         except Exception as exc:  # noqa: BLE001
+            elapsed = time.perf_counter() - t0
+            logger.exception(
+                "Unexpected error building image %s for project %s after %.3fs: %s",
+                tag,
+                project_id[:8],
+                elapsed,
+                exc,
+                extra={"event": "docker.build.failed"},
+            )
             raise IsolationError(
                 f"Unexpected error building image for project {project_id}: {exc}"
             ) from exc
@@ -465,6 +523,7 @@ class DockerManager:
         project_id: str,
         image_tag: str,
         command: str | list[str] | None = None,
+        environment: dict[str, str] | None = None,
     ) -> tuple[str, str]:
         """
         Start the hardened, isolated target container on a per-scan internal network.
@@ -472,12 +531,12 @@ class DockerManager:
         Hardening enforced (THREAT_MODEL C3.1-C3.5):
           - cap_drop=["ALL"]
           - security_opt=["no-new-privileges"]
-          - read_only rootfs + tmpfs on /tmp
+          - read_only rootfs + tmpfs on /tmp and /tmp/clairsec-data
           - pids_limit=256
           - memory and CPU limits
           - NO published ports (reachable only via proxy container on the internal net)
           - NO Docker socket or host volumes mounted
-          - environment={} (no host secrets)
+          - environment: target configuration only (no host secrets)
         """
         name = self.container_name(project_id)
         self._remove_container_by_name(name)
@@ -486,13 +545,30 @@ class DockerManager:
 
         tmpfs_config = {"/tmp": "rw,noexec,nosuid,size=64m"} if settings.docker_read_only else None
 
-        logger.info("Starting hardened target container %s on network %s", name, net.name)
+        container_env = dict(environment) if environment else {}
+        env_keys = sorted(list(container_env.keys()))
+
+        t0 = time.perf_counter()
+        logger.info(
+            "Starting hardened target container %s on network %s (image=%s, limits=[mem=%s, pids=%d, cpus=%d], "
+            "read_only=%s, non_root=%s, env_keys=%s)",
+            name,
+            net.name,
+            image_tag,
+            settings.docker_mem_limit,
+            settings.docker_pids_limit,
+            settings.docker_nano_cpus,
+            settings.docker_read_only,
+            settings.docker_non_root,
+            env_keys,
+            extra={"event": "docker.container.starting"},
+        )
         try:
             run_kwargs: dict[str, Any] = {
                 "image": image_tag,
                 "name": name,
                 "detach": True,
-                "environment": {},
+                "environment": container_env,
                 "network": net.name,
                 "ports": {},  # No published ports — reachable only via internal proxy
                 "mem_limit": settings.docker_mem_limit,
@@ -511,14 +587,38 @@ class DockerManager:
                 run_kwargs["command"] = ["python3", "-c", "import time; time.sleep(3600)"]
 
             container = self._client.containers.run(**run_kwargs)
-            logger.info("Target container %s started (id=%s)", name, container.id[:12])
+            elapsed = time.perf_counter() - t0
+            logger.info(
+                "Target container %s started in %.3fs (id=%s)",
+                name,
+                elapsed,
+                container.id[:12],
+                extra={"event": "docker.container.started"},
+            )
             return container.id, name
 
         except docker.errors.ImageNotFound as exc:
+            elapsed = time.perf_counter() - t0
+            logger.error(
+                "Image %s not found when starting container %s after %.3fs: %s",
+                image_tag,
+                name,
+                elapsed,
+                exc,
+                extra={"event": "docker.container.failed"},
+            )
             raise IsolationError(
                 f"Image {image_tag} not found when starting container: {exc}"
             ) from exc
         except Exception as exc:  # noqa: BLE001
+            elapsed = time.perf_counter() - t0
+            logger.exception(
+                "Failed to start container %s after %.3fs: %s",
+                name,
+                elapsed,
+                exc,
+                extra={"event": "docker.container.failed"},
+            )
             raise IsolationError(
                 f"Failed to start container for project {project_id}: {exc}"
             ) from exc
@@ -544,10 +644,12 @@ class DockerManager:
         target_net_name = self.target_network_name(project_id)
 
         target_base = f"http://{target_container_name}:{settings.docker_target_port}"
+        t0 = time.perf_counter()
         logger.info(
             "Starting scanner proxy %s forwarding to %s",
             proxy_name,
             target_base,
+            extra={"event": "docker.proxy.starting"},
         )
 
         try:
@@ -581,15 +683,27 @@ class DockerManager:
                     f"Proxy container {proxy_name} started but no host port was mapped."
                 )
             host_port = int(mappings[0]["HostPort"])
+            elapsed = time.perf_counter() - t0
             logger.info(
-                "Proxy container %s running at 127.0.0.1:%d -> %s",
+                "Proxy container %s running at 127.0.0.1:%d -> %s in %.3fs (id=%s)",
                 proxy_name,
                 host_port,
                 target_base,
+                elapsed,
+                proxy_container.id[:12],
+                extra={"event": "docker.proxy.started"},
             )
             return proxy_container.id, host_port
 
         except Exception as exc:  # noqa: BLE001
+            elapsed = time.perf_counter() - t0
+            logger.exception(
+                "Failed to start scanner proxy %s after %.3fs: %s",
+                proxy_name,
+                elapsed,
+                exc,
+                extra={"event": "docker.proxy.failed"},
+            )
             raise IsolationError(
                 f"Failed to start scanner proxy for project {project_id}: {exc}"
             ) from exc
@@ -712,36 +826,77 @@ class DockerManager:
 
         base_url = f"http://127.0.0.1:{host_port}"
         deadline = time.monotonic() + timeout
+        t0 = time.perf_counter()
+
+        self._last_health_diagnostics = {
+            "base_url": base_url,
+            "probed_paths": ["/health", "/"],
+            "last_status_code": None,
+            "last_error": None,
+            "attempts": 0,
+        }
 
         logger.info(
             "Waiting for container to become healthy via proxy at %s (timeout=%ds)",
             base_url,
             timeout,
+            extra={"event": "docker.health_check.started"},
         )
 
         with httpx.Client(timeout=2.0) as client:
             while time.monotonic() < deadline:
                 for path in ("/health", "/"):
                     try:
+                        self._last_health_diagnostics["attempts"] += 1
                         response = client.get(f"{base_url}{path}")
+                        self._last_health_diagnostics["last_status_code"] = response.status_code
                         if response.status_code < 400:
+                            elapsed = time.perf_counter() - t0
                             logger.info(
-                                "Container healthy via proxy (HTTP %d at %s%s)",
-                                response.status_code,
+                                "Container healthy via proxy at %s%s (HTTP %d after %d attempt(s), took %.2fs)",
                                 base_url,
                                 path,
+                                response.status_code,
+                                self._last_health_diagnostics["attempts"],
+                                elapsed,
+                                extra={"event": "docker.health_check.succeeded"},
                             )
                             return True
-                    except httpx.HTTPError:
-                        pass
+                        logger.debug(
+                            "Health probe attempt %d to %s%s returned HTTP %d",
+                            self._last_health_diagnostics["attempts"],
+                            base_url,
+                            path,
+                            response.status_code,
+                            extra={"event": "docker.health_check.probing"},
+                        )
+                    except httpx.HTTPError as exc:
+                        self._last_health_diagnostics["last_error"] = str(exc)
+                        logger.debug(
+                            "Health probe attempt %d to %s%s failed: %s",
+                            self._last_health_diagnostics["attempts"],
+                            base_url,
+                            path,
+                            exc,
+                            extra={"event": "docker.health_check.probing"},
+                        )
 
                 time.sleep(1)
 
+        elapsed = time.perf_counter() - t0
         logger.warning(
-            "Target did not become healthy via proxy within %d seconds",
+            "Target did not become healthy via proxy within %d seconds (elapsed=%.2fs, attempts=%d, diagnostics: %s)",
             timeout,
+            elapsed,
+            self._last_health_diagnostics["attempts"],
+            self._last_health_diagnostics,
+            extra={"event": "docker.health_check.failed"},
         )
         return False
+
+    def get_last_health_diagnostics(self) -> dict[str, Any]:
+        """Return diagnostic details from the most recent health-check polling."""
+        return getattr(self, "_last_health_diagnostics", {})
 
     # ─────────────────────────────────────────────────────────────────────────
     # Logs
@@ -793,10 +948,28 @@ class DockerManager:
           3. Remove internal network.
           4. Remove built image.
         """
-        if container_id:
-            self.stop_container(container_id)
-        self._remove_container_by_name(self.container_name(project_id))
-        self.stop_proxy(project_id)
-        self._remove_network(self.target_network_name(project_id))
-        self.remove_image(self.image_tag(project_id))
-        logger.info("Docker cleanup complete for project %s", project_id[:8])
+        logger.info(
+            "Starting Docker teardown for project %s (container_id=%s)",
+            project_id[:8],
+            container_id[:12] if container_id else "None",
+            extra={"event": "docker.cleanup.started"},
+        )
+        try:
+            if container_id:
+                self.stop_container(container_id)
+            self._remove_container_by_name(self.container_name(project_id))
+            self.stop_proxy(project_id)
+            self._remove_network(self.target_network_name(project_id))
+            self.remove_image(self.image_tag(project_id))
+            logger.info(
+                "Docker cleanup complete for project %s",
+                project_id[:8],
+                extra={"event": "docker.cleanup.succeeded"},
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception(
+                "Error during Docker cleanup for project %s: %s",
+                project_id[:8],
+                exc,
+                extra={"event": "docker.cleanup.failed"},
+            )

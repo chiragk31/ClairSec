@@ -152,6 +152,7 @@ class EvaluatorEvidence(BaseModel):
     cwe: list[str]
     route_template: str
     method: str
+    principal_id: str | None = None
     request: dict[str, Any]
     response: dict[str, Any]
     oracle_result: dict[str, Any]
@@ -210,3 +211,15 @@ class EvaluatorScanResult(BaseModel):
     confirmed_count: int = 0
     rejected_count: int = 0
     inconclusive_count: int = 0
+
+    @property
+    def confirmed_findings(self) -> list[EvaluatedFinding]:
+        return [f for f in self.findings if f.status == EvaluationStatus.CONFIRMED or getattr(f.status, "value", f.status) == "confirmed"]
+
+    @property
+    def rejected_findings(self) -> list[EvaluatedFinding]:
+        return [f for f in self.findings if f.status == EvaluationStatus.REJECTED or getattr(f.status, "value", f.status) == "rejected"]
+
+    @property
+    def inconclusive_findings(self) -> list[EvaluatedFinding]:
+        return [f for f in self.findings if f.status == EvaluationStatus.INCONCLUSIVE or getattr(f.status, "value", f.status) == "inconclusive"]

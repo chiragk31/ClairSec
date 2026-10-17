@@ -61,6 +61,7 @@ class Settings(BaseSettings):
     docker_pids_limit: int = 256
     docker_read_only: bool = True
     docker_non_root: bool = True
+    docker_sqlite_data_dir: str = "/tmp/clairsec-data"
     # Base image pinned by SHA-256 digest for reproducibility and security.
     # To re-resolve or update this pin, run:
     #   docker pull python:3.11-slim

@@ -126,6 +126,18 @@ async def test_scans_api_full_pipeline_against_vulnerable_app(tmp_path: Path):
         assert final_scan["findings_confirmed"] == 3
         assert final_scan["findingsConfirmed"] == 3
 
+        # UI contract metric assertions
+        assert final_scan["endpoints_discovered"] > 0
+        assert final_scan["endpointsDiscovered"] > 0
+        assert final_scan["tests_executed"] >= 3
+        assert final_scan["testsExecuted"] >= 3
+        assert final_scan["fixes_generated"] == 3
+        assert final_scan["fixesGenerated"] == 3
+        assert final_scan["fixes_verified"] == 3
+        assert final_scan["fixesVerified"] == 3
+        assert "builder" in final_scan.get("stage_durations", {})
+        assert "builder" in final_scan.get("stageDurations", {})
+
         # Check counters
         counters = final_scan["counters"]
         assert counters["confirmed"] == 3
@@ -141,13 +153,7 @@ async def test_scans_api_full_pipeline_against_vulnerable_app(tmp_path: Path):
     categories = {f["category"] for f in findings}
     assert categories == {"BOLA", "BOPLA_MASS_ASSIGN", "SECURITY_MISCONFIG"}
 
-    # 5. Assert each finding conforms strictly to the Finding model in desktop/lib/models/finding.dart:
-    # [id, scanId, title, category, cwe, severity enum (critical/high/medium/low/informational),
-    # confidence enum (high/medium/low), routeTemplate, method, description, impact,
-    # runtimeConfirmed bool, status enum (candidate/confirmed/rejected/inconclusive),
-    # statusReason, evidenceSummary, reproductionSummary, sourceLocations[{file,lineStart,lineEnd}],
-    # remediationStatus enum (notStarted/fixProposed/fixApplied/fixVerified/fixFailed/regressed/verificationUnavailable),
-    # createdAt]
+    # 5. Assert each finding conforms strictly to the Finding model in desktop/lib/models/finding.dart
     for f in findings:
         assert isinstance(f["id"], str)
         assert f["scanId"] == scan_id
@@ -171,3 +177,165 @@ async def test_scans_api_full_pipeline_against_vulnerable_app(tmp_path: Path):
         # Post-fix & verification check: all 3 seeded findings should be verified
         assert f["remediationStatus"] == "fixVerified", f"Expected fixVerified, got {f['remediationStatus']}"
         assert f["createdAt"] is not None
+
+
+@pytest.mark.asyncio
+async def test_scans_api_pipeline_against_secure_app():
+    """
+    Test: POST a scan against secure_fastapi_app (negative reference fixture).
+    Asserts:
+    - Zero confirmed findings (false positive rate = 0).
+    - Endpoints discovered > 0.
+    - Tests executed > 0.
+    - Zero fixes proposed or verified.
+    - Scan state completed cleanly.
+    - UI contract fields accurately reflect zero findings and genuine activity.
+    """
+    token = initialize_auth()
+    app = create_app()
+
+    scan_service = ScanService()
+    from app.api.scans import get_scan_service
+    app.dependency_overrides[get_scan_service] = lambda: scan_service
+
+    project_id = str(uuid.uuid4())
+    project = ProjectRecord(
+        id=project_id,
+        name="Secure Test App",
+        source_path=str(FIXTURES_DIR / "secure_fastapi_app"),
+        validation_status=ValidationStatus.VALID,
+        entry_point="main.py",
+        isolation_status=IsolationStatus.READY,
+    )
+    await scan_service._project_repo.create(project)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://127.0.0.1",
+        headers={"Authorization": f"Bearer {token}"},
+    ) as client:
+        res = await client.post("/api/scans", json={"project_id": project_id})
+        assert res.status_code == 202
+        body = res.json()
+        scan_id = body.get("scan_id") or body.get("scanId")
+
+        # Poll until complete
+        max_wait = 120.0
+        start_time = time.time()
+        final_scan = None
+
+        while time.time() - start_time < max_wait:
+            status_res = await client.get(f"/api/scans/{scan_id}")
+            assert status_res.status_code == 200
+            scan_data = status_res.json()
+            if scan_data["state"] in ("completed", "failed"):
+                final_scan = scan_data
+                break
+            await asyncio.sleep(1.0)
+
+        assert final_scan is not None
+        assert final_scan["state"] == "completed", f"Scan failed: {final_scan.get('error')}"
+        assert final_scan["findings_confirmed"] == 0
+        assert final_scan["findingsConfirmed"] == 0
+        assert final_scan["endpoints_discovered"] > 0
+        assert final_scan["endpointsDiscovered"] > 0
+        assert final_scan["tests_executed"] > 0
+        assert final_scan["testsExecuted"] > 0
+        assert final_scan["fixes_generated"] == 0
+        assert final_scan["fixesGenerated"] == 0
+        assert final_scan["fixes_verified"] == 0
+        assert final_scan["fixesVerified"] == 0
+
+        findings_res = await client.get(f"/api/scans/{scan_id}/findings")
+        assert findings_res.status_code == 200
+        assert len(findings_res.json()) == 0
+
+
+@pytest.mark.asyncio
+async def test_scans_api_pipeline_with_prohibited_delete_route(tmp_path):
+    """
+    Integration test: Runs a complete scan pipeline against an app containing
+    a prohibited DELETE route (/admin/users/{user_id}) alongside safe routes.
+    Verifies that:
+    1. The pipeline does not abort on NonDestructivePolicyViolationError.
+    2. The prohibited DELETE route is recorded as skipped_policy.
+    3. The safe routes are executed.
+    4. Metrics reflect tests_skipped_policy >= 1 and tests_executed >= 1.
+    5. The final scan state transitions to 'completed'.
+    """
+    token = initialize_auth()
+    app_fastapi = create_app()
+
+    scan_service = ScanService()
+    from app.api.scans import get_scan_service
+    app_fastapi.dependency_overrides[get_scan_service] = lambda: scan_service
+
+    project_id = str(uuid.uuid4())
+    # Create a small FastAPI project directory in tmp_path with workspaces in path
+    proj_dir = tmp_path / "workspaces" / project_id / "scan_workspace"
+    proj_dir.mkdir(parents=True)
+    (proj_dir / "requirements.txt").write_text("fastapi\nuvicorn\n")
+    (proj_dir / "main.py").write_text('''
+from fastapi import FastAPI
+
+app = FastAPI(title="App With Delete")
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+@app.get("/")
+def root():
+    return {"status": "running"}
+
+@app.get("/admin/users")
+def list_admin_users():
+    return [{"id": 1, "username": "admin"}]
+
+@app.delete("/admin/users/{user_id}")
+def delete_admin_user(user_id: int):
+    return {"status": "deleted", "user_id": user_id}
+''')
+    project = ProjectRecord(
+        id=project_id,
+        name="App With Delete",
+        source_path=str(proj_dir),
+        workspace_path=str(proj_dir),
+        validation_status=ValidationStatus.VALID,
+        entry_point="main.py",
+        isolation_status=IsolationStatus.READY,
+    )
+    await scan_service._project_repo.create(project)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app_fastapi),
+        base_url="http://127.0.0.1",
+        headers={"Authorization": f"Bearer {token}"},
+    ) as client:
+        # Trigger scan
+        res = await client.post("/api/scans", json={"project_id": project_id})
+        assert res.status_code == 202
+        scan_id = res.json()["scan_id"]
+
+        # Poll until complete
+        max_wait = 60.0
+        start_time = time.time()
+        final_scan = None
+
+        while time.time() - start_time < max_wait:
+            status_res = await client.get(f"/api/scans/{scan_id}")
+            assert status_res.status_code == 200
+            scan_data = status_res.json()
+            if scan_data["state"] in ("completed", "failed"):
+                final_scan = scan_data
+                break
+            await asyncio.sleep(1.0)
+
+        assert final_scan is not None, f"Scan timed out (last stage: {scan_data.get('stage')}, state: {scan_data.get('state')})"
+        assert final_scan["state"] == "completed", f"Scan failed: {final_scan.get('error')}"
+        assert final_scan["tests_skipped_policy"] >= 1
+        assert final_scan["testsSkippedPolicy"] >= 1
+        assert final_scan["tests_executed"] >= 1
+        assert final_scan["testsExecuted"] >= 1
+        assert final_scan["tests_generated"] >= final_scan["tests_executed"] + final_scan["tests_skipped_policy"]
+

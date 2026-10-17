@@ -40,18 +40,58 @@ def validate_fastapi_project(project_path: str) -> ValidationResult:
     in ValidationResult.errors.
     """
     path = Path(project_path)
+    logger.info(
+        "Validating project at '%s' (is_absolute=%s)",
+        project_path,
+        path.is_absolute(),
+        extra={"event": "project.validation.started"},
+    )
 
     # --- Basic directory checks ---
     if not path.exists():
+        parent_entries: list[str] = []
+        if path.parent.exists() and path.parent.is_dir():
+            try:
+                parent_entries = [p.name for p in sorted(path.parent.iterdir())[:20]]
+            except Exception:
+                pass
+        logger.error(
+            "Project path does not exist: '%s'. Parent '%s' entries (%d shown): %s",
+            project_path,
+            path.parent,
+            len(parent_entries),
+            parent_entries,
+            extra={"event": "project.validation.failed"},
+        )
         return ValidationResult(
             is_valid=False,
             errors=[f"Path does not exist: {project_path}"],
         )
+
     if not path.is_dir():
+        logger.error(
+            "Project path is not a directory: '%s'",
+            project_path,
+            extra={"event": "project.validation.failed"},
+        )
         return ValidationResult(
             is_valid=False,
             errors=[f"Path is not a directory: {project_path}"],
         )
+
+    try:
+        entries = sorted(path.iterdir())
+        sample_entries = [p.name for p in entries[:20]]
+        logger.debug(
+            "Directory '%s' exists with %d entries (first %d: %s)",
+            path,
+            len(entries),
+            len(sample_entries),
+            sample_entries,
+            extra={"event": "project.directory.inspected"},
+        )
+    except Exception as exc:
+        logger.debug("Could not list entries in %s: %s", path, exc)
 
     errors: list[str] = []
     entry_point: str | None = None
@@ -73,6 +113,24 @@ def validate_fastapi_project(project_path: str) -> ValidationResult:
 
     is_valid = entry_point is not None
     isolation_ready = is_valid and dep_file is not None
+
+    if is_valid:
+        logger.info(
+            "Project validation succeeded for '%s' (entry_point=%s, dep_file=%s, dependencies=%d, isolation_ready=%s)",
+            project_path,
+            entry_point,
+            dep_file,
+            len(dependencies),
+            isolation_ready,
+            extra={"event": "project.validation.succeeded"},
+        )
+    else:
+        logger.warning(
+            "Project validation failed for '%s': %s",
+            project_path,
+            errors,
+            extra={"event": "project.validation.failed"},
+        )
 
     return ValidationResult(
         is_valid=is_valid,
@@ -98,7 +156,14 @@ def _find_fastapi_entry(root: Path, errors: list[str]) -> str | None:
     Uses ast.parse for static analysis — target code is never executed.
     """
     py_files = sorted(root.rglob("*.py"))
+    logger.debug(
+        "Checking %d candidate Python file(s) for FastAPI instance in %s",
+        len(py_files),
+        root,
+        extra={"event": "entrypoint.candidates.checked"},
+    )
     scanned = 0
+    scanned_candidates: list[str] = []
 
     for py_file in py_files:
         if scanned >= _MAX_PY_FILES:
@@ -115,15 +180,31 @@ def _find_fastapi_entry(root: Path, errors: list[str]) -> str | None:
 
             source = py_file.read_text(encoding="utf-8", errors="replace")
             scanned += 1
+            rel_candidate = str(py_file.relative_to(root))
+            scanned_candidates.append(rel_candidate)
 
             if _ast_has_fastapi_instance(source):
-                return str(py_file.relative_to(root))
+                logger.info(
+                    "Selected entry point '%s' in %s (FastAPI instance detected)",
+                    rel_candidate,
+                    root,
+                    extra={"event": "entrypoint.selected"},
+                )
+                return rel_candidate
 
         except OSError as exc:
             logger.debug("Could not read %s: %s", py_file, exc)
         except Exception as exc:  # noqa: BLE001
             logger.debug("Unexpected error reading %s: %s", py_file, exc)
 
+    logger.warning(
+        "No FastAPI entry point found in %s after scanning %d candidate file(s): %s. "
+        "Reason: no top-level or module-level FastAPI() call found.",
+        root,
+        len(scanned_candidates),
+        scanned_candidates[:10],
+        extra={"event": "entrypoint.not_found"},
+    )
     return None
 
 
@@ -166,11 +247,21 @@ def _parse_dependencies(
     req_txt = root / "requirements.txt"
     if req_txt.exists():
         deps = _parse_requirements_txt(req_txt, errors)
+        logger.info(
+            "Found dependency file 'requirements.txt' with %d package(s)",
+            len(deps),
+            extra={"event": "dependency.file.found"},
+        )
         return "requirements.txt", deps
 
     pyproject = root / "pyproject.toml"
     if pyproject.exists():
         deps = _parse_pyproject_toml(pyproject, errors)
+        logger.info(
+            "Found dependency file 'pyproject.toml' with %d package(s)",
+            len(deps),
+            extra={"event": "dependency.file.found"},
+        )
         return "pyproject.toml", deps
 
     # Check one level deeper (e.g. src layout)
@@ -180,8 +271,19 @@ def _parse_dependencies(
             if nested_req.exists():
                 rel = str(nested_req.relative_to(root))
                 deps = _parse_requirements_txt(nested_req, errors)
+                logger.info(
+                    "Found nested dependency file '%s' with %d package(s)",
+                    rel,
+                    len(deps),
+                    extra={"event": "dependency.file.found"},
+                )
                 return rel, deps
 
+    logger.warning(
+        "No dependency file found (checked requirements.txt, pyproject.toml, and immediate subdirectories in %s)",
+        root,
+        extra={"event": "dependency.file.missing"},
+    )
     errors.append(
         "No dependency file found (requirements.txt or pyproject.toml). "
         "A dependency file is needed to assess isolation readiness."

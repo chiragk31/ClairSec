@@ -32,9 +32,12 @@ class TestCaseRecord(BaseModel):
     route_template: str               # e.g. "/documents/{doc_id}", normalized
     method: str                       # GET, POST, PUT, etc.
     principal_id: str | None = None
-    request: dict[str, Any]
-    response: dict[str, Any]
-    oracle_result: dict[str, Any]     # fired: bool, rule_id, rationale
+    request: dict[str, Any] = Field(default_factory=dict)
+    response: dict[str, Any] = Field(default_factory=dict)
+    oracle_result: dict[str, Any] = Field(default_factory=dict)     # fired: bool, rule_id, rationale
+    status: str = "executed"          # "executed", "skipped_policy", "failed_error"
+    skip_reason: str | None = None
+    error_detail: str | None = None
     generated_by: dict[str, Any] = Field(
         default_factory=lambda: {
             "agent": "attacker",
@@ -68,6 +71,7 @@ class CandidateFinding(BaseModel):
     cvss: Any | None = None
     confidence: Any | None = None
     evidence_ids: list[str] = Field(default_factory=list)
+    principal_id: str | None = None
     reproduction_summary: str = ""
     source_locations: list[dict[str, Any]] = Field(default_factory=list)
     status: str = "candidate"

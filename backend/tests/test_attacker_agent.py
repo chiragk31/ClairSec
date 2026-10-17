@@ -188,6 +188,221 @@ async def test_off_target_request_refused_t9_in_scan():
         await handle.stop()
 
 
+@pytest.mark.asyncio
+async def test_prohibited_delete_method_skipped_by_preflight_and_safe_tests_continue():
+    """
+    Regression Test: Proves that an adversarial route with DELETE is skipped by policy
+    during preflight, does NOT abort the scan, is marked 'skipped_policy', is NOT counted
+    as an executed test or vulnerability, and subsequent safe tests execute normally.
+    """
+    from app.agents.builder.schemas import AgentContext, RouteItem, TestPrincipal
+
+    scan_id = str(uuid.uuid4())
+    handle = LocalFixtureTargetHandle(fixture_dir=VULN_FIXTURE)
+    await handle.start()
+
+    try:
+        # Construct synthetic context containing a prohibited DELETE route and safe GET routes
+        context = AgentContext(
+            project_id="test_project",
+            scan_id=scan_id,
+            routes=[
+                # Prohibited DELETE route in BFLA
+                RouteItem(
+                    route_template="/admin/users/{user_id}",
+                    method="DELETE",
+                    handler_name="delete_user",
+                    source_file="admin.py",
+                    source_line_range=(50, 70),
+                    requires_auth=True,
+                ),
+                # Safe GET route in BFLA
+                RouteItem(
+                    route_template="/admin/users",
+                    method="GET",
+                    handler_name="list_users",
+                    source_file="admin.py",
+                    source_line_range=(20, 45),
+                    requires_auth=True,
+                ),
+                # Safe GET debug config route
+                RouteItem(
+                    route_template="/debug/config",
+                    method="GET",
+                    handler_name="get_debug_config",
+                    source_file="main.py",
+                    source_line_range=(198, 208),
+                    requires_auth=False,
+                    is_debug_or_internal=True,
+                ),
+            ],
+            principals=[
+                TestPrincipal(user_id="usr_alice_01", username="alice", token="Bearer alice-token-123", role="member"),
+            ],
+            auth_schemes=["OAuth2PasswordBearer"],
+        )
+
+        attacker = AttackerAgent()
+        result = await attacker.run_scan(context=context, target_handle=handle)
+
+        # 1. Prohibited DELETE test was generated and recorded as skipped_policy
+        delete_tcs = [tc for tc in result.test_cases if tc.method == "DELETE"]
+        assert len(delete_tcs) == 1
+        delete_tc = delete_tcs[0]
+        assert delete_tc.status == "skipped_policy"
+        assert delete_tc.skip_reason is not None
+        assert "DELETE is prohibited" in delete_tc.skip_reason
+        assert delete_tc.oracle_result["fired"] is False
+        assert delete_tc.response.get("skipped") is True
+
+        # 2. DELETE is NOT classified as a candidate finding
+        for f in result.findings:
+            assert f.method != "DELETE"
+
+        # 3. Safe GET routes were executed
+        executed_tcs = [tc for tc in result.test_cases if tc.status == "executed"]
+        assert len(executed_tcs) >= 1
+        assert any(tc.route_template == "/debug/config" for tc in executed_tcs)
+
+        # 4. Counters are accurately partitioned
+        assert result.counters["tests_generated"] == len(result.test_cases)
+        assert result.counters["tests_skipped_policy"] >= 1
+        assert result.counters["tests_executed"] == len(executed_tcs)
+        assert result.counters["tests_failed_error"] == 0
+        assert result.counters["tests_executed"] < result.counters["tests_generated"]
+
+        # 5. Denominator: all test cases (both skipped and executed) were persisted to repository
+        persisted = await attacker._test_case_repo.list_by_scan(scan_id)
+        assert len(persisted) == len(result.test_cases)
+
+    finally:
+        await handle.stop()
+
+
+@pytest.mark.asyncio
+async def test_policy_violation_exception_at_boundary_does_not_abort_scan():
+    """
+    Regression Test: If NonDestructivePolicyViolationError is raised at runtime
+    at the HTTP client boundary, it is safely caught, recorded as 'skipped_policy',
+    and does not abort the scan.
+    """
+    from unittest.mock import patch
+    from app.agents.builder.schemas import AgentContext, RouteItem, TestPrincipal
+    from app.security.http_client import NonDestructivePolicyViolationError, ScopeLockedHttpClient
+
+    scan_id = str(uuid.uuid4())
+    handle = LocalFixtureTargetHandle(fixture_dir=VULN_FIXTURE)
+    await handle.start()
+
+    try:
+        context = AgentContext(
+            project_id="test_project",
+            scan_id=scan_id,
+            routes=[
+                RouteItem(
+                    route_template="/documents/{doc_id}",
+                    method="GET",
+                    handler_name="get_document",
+                    source_file="main.py",
+                    source_line_range=(120, 130),
+                    requires_auth=True,
+                ),
+            ],
+            principals=[
+                TestPrincipal(user_id="usr_alice_01", username="alice", token="Bearer alice-token-123", role="member"),
+                TestPrincipal(user_id="usr_bob_02", username="bob", token="Bearer bob-token-456", role="member"),
+            ],
+        )
+
+        attacker = AttackerAgent()
+
+        orig_request = ScopeLockedHttpClient.request
+
+        async def mock_request(self, method, url, **kwargs):
+            if "doc_bob_02" in url:
+                raise NonDestructivePolicyViolationError("Simulated boundary policy error")
+            return await orig_request(self, method, url, **kwargs)
+
+        with patch.object(ScopeLockedHttpClient, "request", new=mock_request):
+            result = await attacker.run_scan(context=context, target_handle=handle)
+
+        bola_tcs = [t for t in result.test_cases if t.route_template == "/documents/{doc_id}"]
+        assert len(bola_tcs) == 1
+        tc = bola_tcs[0]
+        assert tc.status == "skipped_policy"
+        assert "Simulated boundary policy error" in (tc.skip_reason or "")
+        assert result.counters["tests_skipped_policy"] == 1
+        assert result.counters["tests_executed"] >= 1
+
+    finally:
+        await handle.stop()
+
+
+@pytest.mark.asyncio
+async def test_unexpected_runtime_error_recorded_as_failed_error_without_abort():
+    """
+    Regression Test: Unexpected runtime error during test case execution is caught,
+    recorded as 'failed_error', increments tests_failed_error, and does not crash scan.
+    """
+    from unittest.mock import patch
+    from app.agents.builder.schemas import AgentContext, RouteItem, TestPrincipal
+    from app.security.http_client import ScopeLockedHttpClient
+
+    scan_id = str(uuid.uuid4())
+    handle = LocalFixtureTargetHandle(fixture_dir=VULN_FIXTURE)
+    await handle.start()
+
+    try:
+        context = AgentContext(
+            project_id="test_project",
+            scan_id=scan_id,
+            routes=[
+                RouteItem(
+                    route_template="/documents/{doc_id}",
+                    method="GET",
+                    handler_name="get_document",
+                    source_file="main.py",
+                    source_line_range=(120, 130),
+                    requires_auth=True,
+                ),
+                RouteItem(
+                    route_template="/debug/config",
+                    method="GET",
+                    handler_name="get_debug_config",
+                    source_file="main.py",
+                    source_line_range=(198, 208),
+                    requires_auth=False,
+                    is_debug_or_internal=True,
+                ),
+            ],
+            principals=[
+                TestPrincipal(user_id="usr_alice_01", username="alice", token="Bearer alice-token-123", role="member"),
+                TestPrincipal(user_id="usr_bob_02", username="bob", token="Bearer bob-token-456", role="member"),
+            ],
+        )
+
+        attacker = AttackerAgent()
+
+        orig_request = ScopeLockedHttpClient.request
+
+        async def mock_request(self, method, url, **kwargs):
+            if "doc_bob_02" in url:
+                raise ConnectionResetError("Connection abruptly closed by peer")
+            return await orig_request(self, method, url, **kwargs)
+
+        with patch.object(ScopeLockedHttpClient, "request", new=mock_request):
+            result = await attacker.run_scan(context=context, target_handle=handle)
+
+        assert result.counters["tests_failed_error"] == 1
+        assert result.counters["tests_executed"] >= 1
+        error_tcs = [tc for tc in result.test_cases if tc.status == "failed_error"]
+        assert len(error_tcs) == 1
+        assert "Connection abruptly closed" in (error_tcs[0].error_detail or "")
+
+    finally:
+        await handle.stop()
+
+
 @pytest.mark.docker
 @pytest.mark.asyncio
 async def test_attacker_live_docker_containerized_target_confirmatory(tmp_path):

@@ -37,8 +37,20 @@ async def test_off_target_absolute_url_refused_t9():
 @pytest.mark.asyncio
 async def test_non_destructive_policy_blocks_delete():
     """SECURITY.md §6: Non-destructive policy blocks HTTP DELETE."""
+    from app.security.http_client import PROHIBITED_METHODS, is_method_prohibited
+
     target_base = "http://127.0.0.1:49210"
     client = ScopeLockedHttpClient(target_base)
+
+    assert "DELETE" in PROHIBITED_METHODS
+    assert is_method_prohibited("DELETE") is True
+    assert is_method_prohibited("delete") is True
+    assert ScopeLockedHttpClient.is_prohibited("DELETE") is True
+    assert ScopeLockedHttpClient.is_prohibited("delete") is True
+    assert ScopeLockedHttpClient.is_prohibited("GET") is False
+    assert ScopeLockedHttpClient.is_prohibited("POST") is False
+    assert ScopeLockedHttpClient.is_prohibited("PUT") is False
+    assert ScopeLockedHttpClient.is_prohibited("PATCH") is False
 
     with pytest.raises(NonDestructivePolicyViolationError, match="DELETE is prohibited"):
         await client.request("DELETE", "/documents/doc_01")

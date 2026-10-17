@@ -13,7 +13,14 @@ from app.agents.attacker.repository import TestCaseRepository
 from app.agents.evaluator.schemas import EvaluatedFinding
 from app.agents.verifier.schemas import OriginalExploitResult
 from app.security.http_client import ScopeLockedHttpClient
-from app.security.oracles import BOLAOracle, BOPLAMassAssignOracle, SecurityMisconfigOracle
+from app.security.oracles import (
+    BFLAOracle,
+    BOLAOracle,
+    BOPLAMassAssignOracle,
+    PathTraversalOracle,
+    SQLInjectionOracle,
+    SecurityMisconfigOracle,
+)
 from app.targets.handle import TargetHandle
 
 logger = logging.getLogger(__name__)
@@ -127,11 +134,50 @@ class OriginalExploitRetester:
                     )
 
                 elif category == "SECURITY_MISCONFIG":
+                    req_origin = headers.get("Origin") or headers.get("origin")
                     oracle_res = SecurityMisconfigOracle.evaluate(
                         endpoint_path=url_path,
                         response_status=resp.status_code,
                         response_body=resp.text,
                         response_headers=dict(resp.headers),
+                        request_origin=req_origin,
+                    )
+                    return OriginalExploitResult(
+                        ran=True,
+                        exploited=oracle_res.fired,
+                        rationale=oracle_res.rationale,
+                    )
+
+                elif category == "BFLA":
+                    oracle_res = BFLAOracle.evaluate(
+                        request_principal_role=oracle_evidence.get("role") or "member",
+                        endpoint_path=url_path,
+                        response_status=resp.status_code,
+                        response_body=resp.text,
+                    )
+                    return OriginalExploitResult(
+                        ran=True,
+                        exploited=oracle_res.fired,
+                        rationale=oracle_res.rationale,
+                    )
+
+                elif category == "PATH_TRAVERSAL":
+                    oracle_res = PathTraversalOracle.evaluate(
+                        endpoint_path=url_path,
+                        response_status=resp.status_code,
+                        response_body=resp.text,
+                    )
+                    return OriginalExploitResult(
+                        ran=True,
+                        exploited=oracle_res.fired,
+                        rationale=oracle_res.rationale,
+                    )
+
+                elif category == "SQL_INJECTION":
+                    oracle_res = SQLInjectionOracle.evaluate(
+                        endpoint_path=url_path,
+                        response_status=resp.status_code,
+                        response_body=resp.text,
                     )
                     return OriginalExploitResult(
                         ran=True,

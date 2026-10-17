@@ -19,7 +19,10 @@ from app.agents.builder.openapi_extractor import (
     extract_openapi_schema,
     parse_openapi_routes,
 )
-from app.agents.builder.provisioning import provision_test_principals
+from app.agents.builder.provisioning import (
+    discover_and_provision_principals,
+    provision_test_principals,
+)
 from app.llm.accounting import LLMCallLedger
 from app.llm.models import (
     AgentName,
@@ -94,6 +97,7 @@ class BuilderAgent:
         # ---------------------------------------------------------------------
         # Step 2: Runtime /openapi.json Extraction
         # ---------------------------------------------------------------------
+        openapi_dict: dict[str, Any] | None = None
         if target_handle is not None:
             openapi_dict = await extract_openapi_schema(target_handle.base_url)
             if openapi_dict:
@@ -183,14 +187,28 @@ class BuilderAgent:
         # ---------------------------------------------------------------------
         # Step 4: Provision Test Principals
         # ---------------------------------------------------------------------
-        principals = provision_test_principals(custom_principals)
+        principals = await discover_and_provision_principals(
+            custom_principals=custom_principals,
+            target_handle=target_handle,
+            project_dir=root,
+        )
 
         # ---------------------------------------------------------------------
         # Step 5: Final Typed AgentContext
         # ---------------------------------------------------------------------
         final_routes = sorted(route_map.values(), key=lambda r: (r.route_template, r.method))
 
-        auth_schemes = ["bearer_token"] if any(r.requires_auth for r in final_routes) else []
+        auth_schemes: list[str] = []
+        if openapi_dict and isinstance(openapi_dict, dict):
+            components = openapi_dict.get("components") or {}
+            schemes = components.get("securitySchemes") or {}
+            if isinstance(schemes, dict):
+                auth_schemes.extend(list(schemes.keys()))
+
+        if not auth_schemes and any(r.requires_auth for r in final_routes):
+            auth_schemes.append("bearer_token")
+        if not auth_schemes and principals:
+            auth_schemes.append("bearer_token")
 
         return AgentContext(
             project_id=project_id,

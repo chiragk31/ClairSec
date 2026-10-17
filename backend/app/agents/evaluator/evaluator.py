@@ -20,6 +20,7 @@ import uuid
 
 from app.agents.attacker.repository import TestCaseRepository
 from app.agents.attacker.schemas import CandidateFinding, normalize_route_path
+from app.agents.builder.schemas import AgentContext, TestPrincipal
 from app.agents.evaluator.confidence import calculate_confidence
 from app.agents.evaluator.cvss_scorer import calculate_cvss_score
 from app.agents.evaluator.reproducer import TestReproducer
@@ -45,7 +46,7 @@ from app.agents.evaluator.schemas import (
 )
 from app.agents.evaluator.verifier import EvidenceVerifier
 from app.core.config import settings
-from app.llm.models import AgentName, LLMRequest, TrustLevel
+from app.llm.models import AgentName, LLMRequest, Message, TrustLevel
 from app.llm.prompts.registry import PromptRegistry
 from app.llm.provider import LLMProvider
 from app.llm.providers.mock_provider import MockLLMProvider
@@ -108,6 +109,53 @@ def _default_cvss_for_category(category: str, evidence: EvaluatorEvidence) -> Cv
             },
         )
 
+    if cat == "BFLA":
+        return CvssInputs(
+            attack_vector=AttackVector.NETWORK,
+            attack_complexity=AttackComplexity.LOW,
+            privileges_required=PrivilegesRequired.LOW if has_auth else PrivilegesRequired.NONE,
+            user_interaction=UserInteraction.NONE,
+            scope=Scope.UNCHANGED,
+            confidentiality=ImpactLevel.HIGH,
+            integrity=ImpactLevel.HIGH,
+            availability=ImpactLevel.NONE,
+            evidence_citations={
+                "confidentiality": "Administrative functions executed without sufficient privilege",
+                "integrity": "Unauthorized modification or execution of administrative capability",
+            },
+        )
+
+    if cat == "PATH_TRAVERSAL":
+        return CvssInputs(
+            attack_vector=AttackVector.NETWORK,
+            attack_complexity=AttackComplexity.LOW,
+            privileges_required=PrivilegesRequired.NONE,
+            user_interaction=UserInteraction.NONE,
+            scope=Scope.UNCHANGED,
+            confidentiality=ImpactLevel.HIGH,
+            integrity=ImpactLevel.NONE,
+            availability=ImpactLevel.NONE,
+            evidence_citations={
+                "confidentiality": "Sensitive internal application source code or files retrieved",
+            },
+        )
+
+    if cat == "SQL_INJECTION":
+        return CvssInputs(
+            attack_vector=AttackVector.NETWORK,
+            attack_complexity=AttackComplexity.LOW,
+            privileges_required=PrivilegesRequired.NONE,
+            user_interaction=UserInteraction.NONE,
+            scope=Scope.UNCHANGED,
+            confidentiality=ImpactLevel.HIGH,
+            integrity=ImpactLevel.HIGH,
+            availability=ImpactLevel.HIGH,
+            evidence_citations={
+                "confidentiality": "Database syntax errors and data leaked via SQL injection",
+                "integrity": "Arbitrary SQL execution potential",
+            },
+        )
+
     # Generic fallback
     return CvssInputs(
         attack_vector=AttackVector.NETWORK,
@@ -149,6 +197,7 @@ class EvaluatorAgent:
         target_handle: TargetHandle,
         scan_id: str,
         existing_confirmed: list[EvaluatedFinding] | None = None,
+        principals: list[TestPrincipal] | None = None,
     ) -> EvaluatedFinding:
         """
         Adjudicate a single CandidateFinding through the full evaluation pipeline:
@@ -163,6 +212,7 @@ class EvaluatorAgent:
         evidence_req: dict[str, Any] = {}
         evidence_res: dict[str, Any] = {}
         evidence_oracle: dict[str, Any] = {}
+        cand_principal_id = getattr(candidate, "principal_id", None)
 
         if candidate.evidence_ids:
             try:
@@ -171,6 +221,8 @@ class EvaluatorAgent:
                     evidence_req = tc.request
                     evidence_res = tc.response
                     evidence_oracle = tc.oracle_result
+                    if not cand_principal_id:
+                        cand_principal_id = tc.principal_id
             except Exception as exc:
                 logger.debug("Could not fetch test case %s: %s", candidate.evidence_ids[0], exc)
 
@@ -180,6 +232,7 @@ class EvaluatorAgent:
             cwe=candidate.cwe,
             route_template=candidate.route_template,
             method=candidate.method,
+            principal_id=cand_principal_id,
             request=evidence_req,
             response=evidence_res,
             oracle_result=evidence_oracle,
@@ -261,6 +314,7 @@ class EvaluatorAgent:
             evidence=evidence,
             target_handle=target_handle,
             scan_id=scan_id,
+            principals=principals,
         )
 
         if not rep_res.reproduced:
@@ -307,10 +361,12 @@ class EvaluatorAgent:
                 llm_req = LLMRequest(
                     prompt_id="evaluator.triage",
                     prompt_version="v1",
-                    system_prompt="You are an expert security evaluator. Select CVSS v3.1 base metrics.",
-                    messages=[{"role": "user", "content": prompt_text}],
+                    system="You are an expert security evaluator. Select CVSS v3.1 base metrics.",
+                    messages=[Message(role="user", content=prompt_text)],
                     response_schema=EvaluatorTriageResponse,
-                    trust_level=TrustLevel.QUARANTINED,
+                    trust=TrustLevel.QUARANTINED,
+                    scan_id=scan_id,
+                    agent=AgentName.EVALUATOR,
                 )
                 llm_resp = await self._provider.complete(request=llm_req)
                 if llm_resp.parsed and isinstance(llm_resp.parsed, EvaluatorTriageResponse):
@@ -371,11 +427,16 @@ class EvaluatorAgent:
         candidates: list[CandidateFinding],
         target_handle: TargetHandle,
         scan_id: str,
+        context: AgentContext | None = None,
+        principals: list[TestPrincipal] | None = None,
     ) -> EvaluatorScanResult:
         """
         Evaluate all candidate findings produced by the Attacker Agent.
         """
         project_id = candidates[0].project_id if candidates else "unknown"
+        if principals is None and context is not None:
+            principals = getattr(context, "principals", None)
+
         evaluated_findings: list[EvaluatedFinding] = []
         confirmed_list: list[EvaluatedFinding] = []
 
@@ -389,6 +450,7 @@ class EvaluatorAgent:
                 target_handle=target_handle,
                 scan_id=scan_id,
                 existing_confirmed=confirmed_list,
+                principals=principals,
             )
             evaluated_findings.append(finding)
 

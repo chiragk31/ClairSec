@@ -31,10 +31,25 @@ class RequestCeilingExceededError(RuntimeError):
     """Raised when the maximum request budget per scan is exceeded (SECURITY.md §6)."""
 
 
+PROHIBITED_METHODS: frozenset[str] = frozenset({"DELETE"})
+
+
+def is_method_prohibited(method: str) -> bool:
+    """Return True if the HTTP method is prohibited by ClairSec non-destructive policy."""
+    return method.strip().upper() in PROHIBITED_METHODS
+
+
 class ScopeLockedHttpClient:
     """
     Scope-locked HTTP client wrapper enforcing host locking, rate limits, and non-destructive policies.
     """
+
+    PROHIBITED_METHODS = PROHIBITED_METHODS
+
+    @classmethod
+    def is_prohibited(cls, method: str) -> bool:
+        """Check if an HTTP method is prohibited by policy without raising."""
+        return is_method_prohibited(method)
 
     def __init__(
         self,

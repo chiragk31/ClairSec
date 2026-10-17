@@ -10,6 +10,9 @@ CRITICAL CONSTRAINTS:
 """
 from __future__ import annotations
 
+import asyncio
+import logging
+import re
 import time
 from typing import Any
 
@@ -28,13 +31,56 @@ from app.agents.attacker.schemas import (
 from app.llm.accounting import LLMCallLedger
 from app.llm.provider import LLMProvider
 from app.llm.providers.mock_provider import MockLLMProvider
-from app.security.http_client import ScopeLockedHttpClient
+from app.security.http_client import (
+    NonDestructivePolicyViolationError,
+    ScopeLockedHttpClient,
+    is_method_prohibited,
+)
 from app.security.oracles import (
+    BFLAOracle,
     BOLAOracle,
     BOPLAMassAssignOracle,
+    PathTraversalOracle,
+    SQLInjectionOracle,
     SecurityMisconfigOracle,
 )
 from app.targets.handle import TargetHandle
+
+logger = logging.getLogger(__name__)
+
+
+def resolve_path_template(
+    template: str,
+    *,
+    principal_id: str | None = None,
+    target_owner: str | None = None,
+    default_id: str = "doc_bob_02",
+) -> str:
+    """
+    Safely resolve all {param} in route template without leaving literal {param}.
+    Substitutes appropriate values for known parameters (doc_id, user_id, id, etc.).
+    """
+    path = template
+    subs = {
+        "{doc_id}": default_id,
+        "{document_id}": default_id,
+        "{id}": default_id,
+        "{user_id}": target_owner or principal_id or "usr_bob_02",
+        "{username}": target_owner or principal_id or "bob",
+        "{item_id}": "1",
+        "{post_id}": "1",
+        "{filename}": "main.py",
+        "{file_path}": "main.py",
+        "{filepath}": "main.py",
+        "{path}": "main.py",
+    }
+    for placeholder, val in subs.items():
+        if placeholder in path:
+            path = path.replace(placeholder, str(val))
+
+    # Generic fallback for any remaining {variable} or {variable:type}
+    path = re.sub(r"\{[a-zA-Z0-9_:]+\}", "1", path)
+    return path
 
 
 class AttackerAgent:
@@ -60,6 +106,117 @@ class AttackerAgent:
         self._rate_limit_rps = rate_limit_rps
         self._max_requests = max_requests
 
+    async def _record_policy_skip(
+        self,
+        *,
+        scan_id: str,
+        category: str,
+        route_template: str,
+        method: str,
+        principal_id: str | None,
+        target_path: str,
+        headers: dict[str, str] | None = None,
+        reason: str,
+        all_tests: list[TestCaseRecord],
+    ) -> TestCaseRecord:
+        logger.info(
+            "Skipping test case by non-destructive policy: %s %s (%s)",
+            method,
+            route_template,
+            reason,
+            extra={
+                "event": "scan.attacker.test_skipped_policy",
+                "method": method,
+                "route_template": route_template,
+                "reason": reason,
+            },
+        )
+        test_case = TestCaseRecord(
+            scan_id=scan_id,
+            category=category,
+            route_template=route_template,
+            method=method,
+            principal_id=principal_id,
+            request={
+                "method": method,
+                "url_path": target_path,
+                "headers": headers or {},
+                "body": None,
+                "skipped": True,
+            },
+            response={
+                "status_code": None,
+                "headers": {},
+                "body": "",
+                "skipped": True,
+            },
+            oracle_result={
+                "fired": False,
+                "rule_id": "POLICY_SKIP",
+                "rationale": reason,
+            },
+            status="skipped_policy",
+            skip_reason=reason,
+        )
+        await self._test_case_repo.save(test_case)
+        all_tests.append(test_case)
+        return test_case
+
+    async def _record_execution_error(
+        self,
+        *,
+        scan_id: str,
+        category: str,
+        route_template: str,
+        method: str,
+        principal_id: str | None,
+        target_path: str,
+        headers: dict[str, str] | None = None,
+        error_detail: str,
+        all_tests: list[TestCaseRecord],
+    ) -> TestCaseRecord:
+        logger.warning(
+            "Test case execution error for %s %s: %s",
+            method,
+            route_template,
+            error_detail,
+            extra={
+                "event": "scan.attacker.test_failed_error",
+                "method": method,
+                "route_template": route_template,
+                "error": error_detail,
+            },
+        )
+        test_case = TestCaseRecord(
+            scan_id=scan_id,
+            category=category,
+            route_template=route_template,
+            method=method,
+            principal_id=principal_id,
+            request={
+                "method": method,
+                "url_path": target_path,
+                "headers": headers or {},
+                "body": None,
+            },
+            response={
+                "status_code": None,
+                "headers": {},
+                "body": "",
+                "error": error_detail,
+            },
+            oracle_result={
+                "fired": False,
+                "rule_id": "ERROR",
+                "rationale": f"Request failed: {error_detail}",
+            },
+            status="failed_error",
+            error_detail=error_detail,
+        )
+        await self._test_case_repo.save(test_case)
+        all_tests.append(test_case)
+        return test_case
+
     async def run_scan(
         self,
         *,
@@ -70,7 +227,7 @@ class AttackerAgent:
         """
         Execute security test suite against the target and emit test cases and candidate findings.
         """
-        executed_tests: list[TestCaseRecord] = []
+        all_tests: list[TestCaseRecord] = []
         candidate_findings: list[CandidateFinding] = []
 
         # Extract principals
@@ -103,21 +260,71 @@ class AttackerAgent:
             # ─────────────────────────────────────────────────────────────────
             # Category 1: BOLA (Broken Object Level Authorization / CWE-639)
             # ─────────────────────────────────────────────────────────────────
-            # Identify routes with object identifier parameters requiring auth
             bola_routes = [
                 r for r in context.routes
-                if "{" in r.route_template and ("doc_id" in r.route_template or "id" in r.route_template)
+                if "{" in r.route_template
+                and ("doc" in r.route_template or "{id}" in r.route_template or "{item_id}" in r.route_template or "{resource_id}" in r.route_template)
+                and not r.route_template.endswith("/{user_id}")
             ]
 
             for route in bola_routes:
                 norm_template = route.route_template
+                method = route.method if route.method in ("GET", "HEAD") else "GET"
                 # Target path: Alice requests Bob's document / object
-                target_path = norm_template.replace("{doc_id}", "doc_bob_02").replace("{id}", "doc_bob_02")
+                target_path = resolve_path_template(
+                    norm_template,
+                    target_owner=bob.user_id,
+                    default_id="doc_bob_02",
+                )
                 req_headers = {"Authorization": alice.token}
 
-                t0 = time.perf_counter()
-                resp = await client.get(target_path, headers=req_headers)
-                elapsed_ms = int((time.perf_counter() - t0) * 1000)
+                # Preflight policy check
+                if ScopeLockedHttpClient.is_prohibited(method):
+                    await self._record_policy_skip(
+                        scan_id=context.scan_id,
+                        category=BOLAOracle.CATEGORY,
+                        route_template=norm_template,
+                        method=method,
+                        principal_id=alice.user_id,
+                        target_path=target_path,
+                        headers=req_headers,
+                        reason=f"HTTP {method} is prohibited by ClairSec non-destructive testing policy.",
+                        all_tests=all_tests,
+                    )
+                    continue
+
+                try:
+                    t0 = time.perf_counter()
+                    resp = await client.request(method, target_path, headers=req_headers)
+                    elapsed_ms = int((time.perf_counter() - t0) * 1000)
+                except NonDestructivePolicyViolationError as exc:
+                    await self._record_policy_skip(
+                        scan_id=context.scan_id,
+                        category=BOLAOracle.CATEGORY,
+                        route_template=norm_template,
+                        method=method,
+                        principal_id=alice.user_id,
+                        target_path=target_path,
+                        headers=req_headers,
+                        reason=str(exc),
+                        all_tests=all_tests,
+                    )
+                    continue
+                except (asyncio.CancelledError, KeyboardInterrupt):
+                    raise
+                except Exception as exc:
+                    await self._record_execution_error(
+                        scan_id=context.scan_id,
+                        category=BOLAOracle.CATEGORY,
+                        route_template=norm_template,
+                        method=method,
+                        principal_id=alice.user_id,
+                        target_path=target_path,
+                        headers=req_headers,
+                        error_detail=str(exc),
+                        all_tests=all_tests,
+                    )
+                    continue
 
                 # Platform oracle evaluation (No LLM adjudication)
                 oracle_res = BOLAOracle.evaluate(
@@ -127,21 +334,22 @@ class AttackerAgent:
                     response_body=resp.text,
                 )
 
-                req_ev = capture_request_evidence("GET", target_path, req_headers, body=None)
+                req_ev = capture_request_evidence(method, target_path, req_headers, body=None)
                 resp_ev = capture_response_evidence(resp.status_code, dict(resp.headers), resp.text, elapsed_ms)
 
                 test_case = TestCaseRecord(
                     scan_id=context.scan_id,
                     category=BOLAOracle.CATEGORY,
                     route_template=norm_template,
-                    method="GET",
+                    method=method,
                     principal_id=alice.user_id,
                     request=req_ev,
                     response=resp_ev,
                     oracle_result=oracle_res.model_dump(),
+                    status="executed",
                 )
                 await self._test_case_repo.save(test_case)
-                executed_tests.append(test_case)
+                all_tests.append(test_case)
 
                 if oracle_res.fired:
                     finding = CandidateFinding(
@@ -152,6 +360,7 @@ class AttackerAgent:
                         cwe=[BOLAOracle.CWE],
                         route_template=norm_template,
                         method="GET",
+                        principal_id=alice.user_id,
                         description=oracle_res.rationale,
                         impact=(
                             "An authenticated user can retrieve confidential resources "
@@ -187,8 +396,14 @@ class AttackerAgent:
 
             for route in mass_assign_routes:
                 norm_template = route.route_template
+                method = route.method
                 # Target path: Alice updates her profile injecting privileged fields
-                target_path = norm_template.replace("{user_id}", alice.user_id).replace("{id}", alice.user_id)
+                target_path = resolve_path_template(
+                    norm_template,
+                    principal_id=alice.user_id,
+                    target_owner=alice.user_id,
+                    default_id=alice.user_id,
+                )
                 read_path = f"/users/{alice.user_id}"
 
                 req_headers = {"Authorization": alice.token}
@@ -199,15 +414,59 @@ class AttackerAgent:
                     "is_admin": True,
                 }
 
-                # Step 1: Write attempt
-                t0 = time.perf_counter()
-                put_resp = await client.put(target_path, json=injected_payload, headers=req_headers)
-                put_elapsed_ms = int((time.perf_counter() - t0) * 1000)
+                # Preflight policy check
+                if ScopeLockedHttpClient.is_prohibited(method):
+                    await self._record_policy_skip(
+                        scan_id=context.scan_id,
+                        category=BOPLAMassAssignOracle.CATEGORY,
+                        route_template=norm_template,
+                        method=method,
+                        principal_id=alice.user_id,
+                        target_path=target_path,
+                        headers=req_headers,
+                        reason=f"HTTP {method} is prohibited by ClairSec non-destructive testing policy.",
+                        all_tests=all_tests,
+                    )
+                    continue
 
-                # Step 2: Verification read
-                t1 = time.perf_counter()
-                get_resp = await client.get(read_path, headers=req_headers)
-                get_elapsed_ms = int((time.perf_counter() - t1) * 1000)
+                try:
+                    # Step 1: Write attempt
+                    t0 = time.perf_counter()
+                    put_resp = await client.request(method, target_path, json=injected_payload, headers=req_headers)
+                    put_elapsed_ms = int((time.perf_counter() - t0) * 1000)
+
+                    # Step 2: Verification read
+                    t1 = time.perf_counter()
+                    get_resp = await client.get(read_path, headers=req_headers)
+                    get_elapsed_ms = int((time.perf_counter() - t1) * 1000)
+                except NonDestructivePolicyViolationError as exc:
+                    await self._record_policy_skip(
+                        scan_id=context.scan_id,
+                        category=BOPLAMassAssignOracle.CATEGORY,
+                        route_template=norm_template,
+                        method=method,
+                        principal_id=alice.user_id,
+                        target_path=target_path,
+                        headers=req_headers,
+                        reason=str(exc),
+                        all_tests=all_tests,
+                    )
+                    continue
+                except (asyncio.CancelledError, KeyboardInterrupt):
+                    raise
+                except Exception as exc:
+                    await self._record_execution_error(
+                        scan_id=context.scan_id,
+                        category=BOPLAMassAssignOracle.CATEGORY,
+                        route_template=norm_template,
+                        method=method,
+                        principal_id=alice.user_id,
+                        target_path=target_path,
+                        headers=req_headers,
+                        error_detail=str(exc),
+                        all_tests=all_tests,
+                    )
+                    continue
 
                 # Platform oracle evaluation
                 oracle_res = BOPLAMassAssignOracle.evaluate(
@@ -217,7 +476,7 @@ class AttackerAgent:
                     read_body=get_resp.text,
                 )
 
-                req_ev = capture_request_evidence("PUT", target_path, req_headers, body=injected_payload)
+                req_ev = capture_request_evidence(method, target_path, req_headers, body=injected_payload)
                 resp_ev = capture_response_evidence(
                     put_resp.status_code,
                     dict(put_resp.headers),
@@ -229,14 +488,15 @@ class AttackerAgent:
                     scan_id=context.scan_id,
                     category=BOPLAMassAssignOracle.CATEGORY,
                     route_template=norm_template,
-                    method="PUT",
+                    method=method,
                     principal_id=alice.user_id,
                     request=req_ev,
                     response=resp_ev,
                     oracle_result=oracle_res.model_dump(),
+                    status="executed",
                 )
                 await self._test_case_repo.save(test_case)
-                executed_tests.append(test_case)
+                all_tests.append(test_case)
 
                 if oracle_res.fired:
                     finding = CandidateFinding(
@@ -247,6 +507,7 @@ class AttackerAgent:
                         cwe=[BOPLAMassAssignOracle.CWE],
                         route_template=norm_template,
                         method="PUT",
+                        principal_id=alice.user_id,
                         description=oracle_res.rationale,
                         impact=(
                             "An unprivileged user can escalate privileges by submitting undeclared "
@@ -288,19 +549,64 @@ class AttackerAgent:
 
             for endpoint_path, method, route_item in misconfig_targets:
                 norm_template = normalize_route_path(endpoint_path, known_templates)
+                req_headers = {"Origin": "http://evil.example.com"}
 
-                t0 = time.perf_counter()
-                resp = await client.get(endpoint_path)
-                elapsed_ms = int((time.perf_counter() - t0) * 1000)
+                if ScopeLockedHttpClient.is_prohibited(method):
+                    await self._record_policy_skip(
+                        scan_id=context.scan_id,
+                        category=SecurityMisconfigOracle.CATEGORY,
+                        route_template=norm_template,
+                        method=method,
+                        principal_id=None,
+                        target_path=endpoint_path,
+                        headers=req_headers,
+                        reason=f"HTTP {method} is prohibited by ClairSec non-destructive testing policy.",
+                        all_tests=all_tests,
+                    )
+                    continue
+
+                try:
+                    t0 = time.perf_counter()
+                    resp = await client.request(method, endpoint_path, headers=req_headers)
+                    elapsed_ms = int((time.perf_counter() - t0) * 1000)
+                except NonDestructivePolicyViolationError as exc:
+                    await self._record_policy_skip(
+                        scan_id=context.scan_id,
+                        category=SecurityMisconfigOracle.CATEGORY,
+                        route_template=norm_template,
+                        method=method,
+                        principal_id=None,
+                        target_path=endpoint_path,
+                        headers=req_headers,
+                        reason=str(exc),
+                        all_tests=all_tests,
+                    )
+                    continue
+                except (asyncio.CancelledError, KeyboardInterrupt):
+                    raise
+                except Exception as exc:
+                    await self._record_execution_error(
+                        scan_id=context.scan_id,
+                        category=SecurityMisconfigOracle.CATEGORY,
+                        route_template=norm_template,
+                        method=method,
+                        principal_id=None,
+                        target_path=endpoint_path,
+                        headers=req_headers,
+                        error_detail=str(exc),
+                        all_tests=all_tests,
+                    )
+                    continue
 
                 oracle_res = SecurityMisconfigOracle.evaluate(
                     endpoint_path=endpoint_path,
                     response_status=resp.status_code,
                     response_body=resp.text,
                     response_headers=dict(resp.headers),
+                    request_origin="http://evil.example.com",
                 )
 
-                req_ev = capture_request_evidence("GET", endpoint_path, headers=None, body=None)
+                req_ev = capture_request_evidence(method, endpoint_path, headers=req_headers, body=None)
                 resp_ev = capture_response_evidence(
                     resp.status_code,
                     dict(resp.headers),
@@ -312,14 +618,15 @@ class AttackerAgent:
                     scan_id=context.scan_id,
                     category=SecurityMisconfigOracle.CATEGORY,
                     route_template=norm_template,
-                    method="GET",
+                    method=method,
                     principal_id=None,
                     request=req_ev,
                     response=resp_ev,
                     oracle_result=oracle_res.model_dump(),
+                    status="executed",
                 )
                 await self._test_case_repo.save(test_case)
-                executed_tests.append(test_case)
+                all_tests.append(test_case)
 
                 if oracle_res.fired:
                     finding = CandidateFinding(
@@ -329,7 +636,7 @@ class AttackerAgent:
                         category=SecurityMisconfigOracle.CATEGORY,
                         cwe=[SecurityMisconfigOracle.CWE],
                         route_template=norm_template,
-                        method="GET",
+                        method=method,
                         description=oracle_res.rationale,
                         impact=(
                             "Internal system configuration, database connection strings, or debug "
@@ -354,13 +661,485 @@ class AttackerAgent:
                     await self._finding_repo.save(finding)
                     candidate_findings.append(finding)
 
+            # Probe CORS on root / if no misconfig candidate was emitted yet
+            if not any(f.category == SecurityMisconfigOracle.CATEGORY for f in candidate_findings):
+                cors_path = "/"
+                norm_template = normalize_route_path(cors_path, known_templates)
+                req_headers = {"Origin": "http://evil.example.com"}
+                try:
+                    t0 = time.perf_counter()
+                    resp = await client.get(cors_path, headers=req_headers)
+                    elapsed_ms = int((time.perf_counter() - t0) * 1000)
+
+                    oracle_res = SecurityMisconfigOracle.evaluate(
+                        endpoint_path=cors_path,
+                        response_status=resp.status_code,
+                        response_body=resp.text,
+                        response_headers=dict(resp.headers),
+                        request_origin="http://evil.example.com",
+                    )
+
+                    req_ev = capture_request_evidence("GET", cors_path, headers=req_headers, body=None)
+                    resp_ev = capture_response_evidence(
+                        resp.status_code,
+                        dict(resp.headers),
+                        resp.text,
+                        elapsed_ms,
+                    )
+
+                    test_case = TestCaseRecord(
+                        scan_id=context.scan_id,
+                        category=SecurityMisconfigOracle.CATEGORY,
+                        route_template=norm_template,
+                        method="GET",
+                        principal_id=None,
+                        request=req_ev,
+                        response=resp_ev,
+                        oracle_result=oracle_res.model_dump(),
+                        status="executed",
+                    )
+                    await self._test_case_repo.save(test_case)
+                    all_tests.append(test_case)
+
+                    if oracle_res.fired:
+                        finding = CandidateFinding(
+                            scan_id=context.scan_id,
+                            project_id=context.project_id,
+                            title=f"Security Misconfiguration: Insecure CORS Policy at {norm_template}",
+                            category=SecurityMisconfigOracle.CATEGORY,
+                            cwe=[SecurityMisconfigOracle.CWE],
+                            route_template=norm_template,
+                            method="GET",
+                            description=oracle_res.rationale,
+                            impact="Cross-origin requests from arbitrary origins are permitted with user credentials.",
+                            runtime_confirmed=True,
+                            oracle_rule_id=oracle_res.rule_id,
+                            evidence_ids=[test_case.id],
+                            reproduction_summary=f"GET {cors_path} with Origin header allowed arbitrary origin with credentials.",
+                            source_locations=[],
+                            status="candidate",
+                        )
+                        await self._finding_repo.save(finding)
+                        candidate_findings.append(finding)
+                except NonDestructivePolicyViolationError as exc:
+                    await self._record_policy_skip(
+                        scan_id=context.scan_id,
+                        category=SecurityMisconfigOracle.CATEGORY,
+                        route_template=norm_template,
+                        method="GET",
+                        principal_id=None,
+                        target_path=cors_path,
+                        headers=req_headers,
+                        reason=str(exc),
+                        all_tests=all_tests,
+                    )
+                except (asyncio.CancelledError, KeyboardInterrupt):
+                    raise
+                except Exception as exc:
+                    await self._record_execution_error(
+                        scan_id=context.scan_id,
+                        category=SecurityMisconfigOracle.CATEGORY,
+                        route_template=norm_template,
+                        method="GET",
+                        principal_id=None,
+                        target_path=cors_path,
+                        headers=req_headers,
+                        error_detail=str(exc),
+                        all_tests=all_tests,
+                    )
+
+            # ─────────────────────────────────────────────────────────────────
+            # Category 4: BFLA (Broken Function Level Authorization / CWE-285)
+            # ─────────────────────────────────────────────────────────────────
+            bfla_routes = [
+                r for r in context.routes
+                if ("/admin" in r.route_template or "/manage" in r.route_template or "admin" in r.route_template)
+                and r.method in ("GET", "POST", "PUT", "DELETE")
+            ]
+            for route in bfla_routes:
+                norm_template = route.route_template
+                method = route.method
+                target_path = resolve_path_template(norm_template, principal_id=alice.user_id, default_id="1")
+                req_headers = {"Authorization": alice.token}
+
+                # Preflight policy check
+                if ScopeLockedHttpClient.is_prohibited(method):
+                    await self._record_policy_skip(
+                        scan_id=context.scan_id,
+                        category=BFLAOracle.CATEGORY,
+                        route_template=norm_template,
+                        method=method,
+                        principal_id=alice.user_id,
+                        target_path=target_path,
+                        headers=req_headers,
+                        reason=f"HTTP {method} is prohibited by ClairSec non-destructive testing policy.",
+                        all_tests=all_tests,
+                    )
+                    continue
+
+                try:
+                    t0 = time.perf_counter()
+                    resp = await client.request(method, target_path, headers=req_headers)
+                    elapsed_ms = int((time.perf_counter() - t0) * 1000)
+                except NonDestructivePolicyViolationError as exc:
+                    await self._record_policy_skip(
+                        scan_id=context.scan_id,
+                        category=BFLAOracle.CATEGORY,
+                        route_template=norm_template,
+                        method=method,
+                        principal_id=alice.user_id,
+                        target_path=target_path,
+                        headers=req_headers,
+                        reason=str(exc),
+                        all_tests=all_tests,
+                    )
+                    continue
+                except (asyncio.CancelledError, KeyboardInterrupt):
+                    raise
+                except Exception as exc:
+                    await self._record_execution_error(
+                        scan_id=context.scan_id,
+                        category=BFLAOracle.CATEGORY,
+                        route_template=norm_template,
+                        method=method,
+                        principal_id=alice.user_id,
+                        target_path=target_path,
+                        headers=req_headers,
+                        error_detail=str(exc),
+                        all_tests=all_tests,
+                    )
+                    continue
+
+                oracle_res = BFLAOracle.evaluate(
+                    request_principal_role=alice.role,
+                    endpoint_path=target_path,
+                    response_status=resp.status_code,
+                    response_body=resp.text,
+                )
+
+                req_ev = capture_request_evidence(method, target_path, req_headers, body=None)
+                resp_ev = capture_response_evidence(
+                    resp.status_code,
+                    dict(resp.headers),
+                    resp.text,
+                    elapsed_ms,
+                )
+
+                test_case = TestCaseRecord(
+                    scan_id=context.scan_id,
+                    category=BFLAOracle.CATEGORY,
+                    route_template=norm_template,
+                    method=method,
+                    principal_id=alice.user_id,
+                    request=req_ev,
+                    response=resp_ev,
+                    oracle_result=oracle_res.model_dump(),
+                    status="executed",
+                )
+                await self._test_case_repo.save(test_case)
+                all_tests.append(test_case)
+
+                if oracle_res.fired:
+                    finding = CandidateFinding(
+                        scan_id=context.scan_id,
+                        project_id=context.project_id,
+                        title=f"Broken Function Level Authorization (BFLA) at {norm_template}",
+                        category=BFLAOracle.CATEGORY,
+                        cwe=[BFLAOracle.CWE],
+                        route_template=norm_template,
+                        method=method,
+                        principal_id=alice.user_id,
+                        description=oracle_res.rationale,
+                        impact="Unprivileged users can invoke administrative endpoints without proper role checks.",
+                        runtime_confirmed=True,
+                        oracle_rule_id=oracle_res.rule_id,
+                        evidence_ids=[test_case.id],
+                        reproduction_summary=f"{method} {target_path} by role '{alice.role}' returned status {resp.status_code}.",
+                        source_locations=[
+                            {
+                                "file": route.source_file,
+                                "line_start": route.source_line_range[0],
+                                "line_end": route.source_line_range[1],
+                            }
+                        ] if route.source_file else [],
+                        status="candidate",
+                    )
+                    await self._finding_repo.save(finding)
+                    candidate_findings.append(finding)
+
+            # ─────────────────────────────────────────────────────────────────
+            # Category 5: PATH_TRAVERSAL (Path Traversal / CWE-22)
+            # ─────────────────────────────────────────────────────────────────
+            FILE_PARAM_NAMES = {"file", "filename", "filepath", "path", "doc_path", "template", "page", "dir", "document"}
+            traversal_routes: list[RouteItem] = []
+
+            for r in context.routes:
+                if r.method != "GET":
+                    continue
+                path_param_names = {p.get("name", "").lower() for p in getattr(r, "path_params", [])}
+                query_param_names = {p.get("name", "").lower() for p in getattr(r, "query_params", [])}
+                has_file_param = bool(path_param_names & FILE_PARAM_NAMES or query_param_names & FILE_PARAM_NAMES)
+                is_file_route = any(kw in r.route_template.lower() for kw in ("/file", "/files", "/download", "/static"))
+                has_user_id = any(uid in r.route_template for uid in ("{user_id}", "{account_id}", "{doc_id}"))
+
+                if (has_file_param or (is_file_route and "{" in r.route_template)) and not has_user_id:
+                    traversal_routes.append(r)
+
+            if not traversal_routes:
+                logger.info(
+                    "Path Traversal: no eligible file-serving routes discovered in target (category skipped)",
+                    extra={"event": "attacker.path_traversal.skipped", "reason": "no_file_routes"},
+                )
+
+            for route in traversal_routes:
+                norm_template = route.route_template
+                method = route.method
+
+                # Construct URL-encoded traversal probe so HTTP client does not collapse dot segments to /app/main.py
+                target_path = re.sub(r"\{[a-zA-Z0-9_:]+\}", "..%2fapp/main.py", norm_template)
+
+                # Determine authentication headers and principal context
+                req_headers: dict[str, str] = {}
+                active_principal_id: str | None = None
+                if (route.requires_auth or bool(context.auth_schemes)) and alice:
+                    req_headers["Authorization"] = alice.token
+                    active_principal_id = alice.user_id
+
+                # Preflight policy check
+                if ScopeLockedHttpClient.is_prohibited(method):
+                    await self._record_policy_skip(
+                        scan_id=context.scan_id,
+                        category=PathTraversalOracle.CATEGORY,
+                        route_template=norm_template,
+                        method=method,
+                        principal_id=active_principal_id,
+                        target_path=target_path,
+                        headers=req_headers,
+                        reason=f"HTTP {method} is prohibited by ClairSec non-destructive testing policy.",
+                        all_tests=all_tests,
+                    )
+                    continue
+
+                try:
+                    t0 = time.perf_counter()
+                    resp = await client.request(method, target_path, headers=req_headers)
+                    elapsed_ms = int((time.perf_counter() - t0) * 1000)
+                except NonDestructivePolicyViolationError as exc:
+                    await self._record_policy_skip(
+                        scan_id=context.scan_id,
+                        category=PathTraversalOracle.CATEGORY,
+                        route_template=norm_template,
+                        method=method,
+                        principal_id=active_principal_id,
+                        target_path=target_path,
+                        headers=req_headers,
+                        reason=str(exc),
+                        all_tests=all_tests,
+                    )
+                    continue
+                except (asyncio.CancelledError, KeyboardInterrupt):
+                    raise
+                except Exception as exc:
+                    await self._record_execution_error(
+                        scan_id=context.scan_id,
+                        category=PathTraversalOracle.CATEGORY,
+                        route_template=norm_template,
+                        method=method,
+                        principal_id=active_principal_id,
+                        target_path=target_path,
+                        headers=req_headers,
+                        error_detail=str(exc),
+                        all_tests=all_tests,
+                    )
+                    continue
+
+                oracle_res = PathTraversalOracle.evaluate(
+                    endpoint_path=target_path,
+                    response_status=resp.status_code,
+                    response_body=resp.text,
+                )
+
+                req_ev = capture_request_evidence(method, target_path, headers=req_headers, body=None)
+                resp_ev = capture_response_evidence(
+                    resp.status_code,
+                    dict(resp.headers),
+                    resp.text,
+                    elapsed_ms,
+                )
+
+                test_case = TestCaseRecord(
+                    scan_id=context.scan_id,
+                    category=PathTraversalOracle.CATEGORY,
+                    route_template=norm_template,
+                    method=method,
+                    principal_id=active_principal_id,
+                    request=req_ev,
+                    response=resp_ev,
+                    oracle_result=oracle_res.model_dump(),
+                    status="executed",
+                )
+                await self._test_case_repo.save(test_case)
+                all_tests.append(test_case)
+
+                if oracle_res.fired:
+                    finding = CandidateFinding(
+                        scan_id=context.scan_id,
+                        project_id=context.project_id,
+                        title=f"Path Traversal at {norm_template}",
+                        category=PathTraversalOracle.CATEGORY,
+                        cwe=[PathTraversalOracle.CWE],
+                        route_template=norm_template,
+                        method=method,
+                        principal_id=active_principal_id,
+                        description=oracle_res.rationale,
+                        impact="Arbitrary host or application source files can be read by unauthorized users.",
+                        runtime_confirmed=True,
+                        oracle_rule_id=oracle_res.rule_id,
+                        evidence_ids=[test_case.id],
+                        reproduction_summary=f"GET {target_path} returned internal source file contents.",
+                        source_locations=[
+                            {
+                                "file": route.source_file,
+                                "line_start": route.source_line_range[0],
+                                "line_end": route.source_line_range[1],
+                            }
+                        ] if route.source_file else [],
+                        status="candidate",
+                    )
+                    await self._finding_repo.save(finding)
+                    candidate_findings.append(finding)
+
+            # ─────────────────────────────────────────────────────────────────
+            # Category 6: SQL_INJECTION (SQL Injection / CWE-89)
+            # ─────────────────────────────────────────────────────────────────
+            sqli_routes = [
+                r for r in context.routes
+                if r.method == "GET" and any(kw in r.route_template.lower() for kw in ("search", "find", "query", "filter"))
+            ]
+            for route in sqli_routes:
+                norm_template = route.route_template
+                method = route.method
+                base_path = resolve_path_template(norm_template, default_id="1")
+                sep = "&" if "?" in base_path else "?"
+                target_path = f"{base_path}{sep}q=' OR '1'='1"
+
+                # Preflight policy check
+                if ScopeLockedHttpClient.is_prohibited(method):
+                    await self._record_policy_skip(
+                        scan_id=context.scan_id,
+                        category=SQLInjectionOracle.CATEGORY,
+                        route_template=norm_template,
+                        method=method,
+                        principal_id=None,
+                        target_path=target_path,
+                        headers=None,
+                        reason=f"HTTP {method} is prohibited by ClairSec non-destructive testing policy.",
+                        all_tests=all_tests,
+                    )
+                    continue
+
+                try:
+                    t0 = time.perf_counter()
+                    resp = await client.request(method, target_path)
+                    elapsed_ms = int((time.perf_counter() - t0) * 1000)
+                except NonDestructivePolicyViolationError as exc:
+                    await self._record_policy_skip(
+                        scan_id=context.scan_id,
+                        category=SQLInjectionOracle.CATEGORY,
+                        route_template=norm_template,
+                        method=method,
+                        principal_id=None,
+                        target_path=target_path,
+                        headers=None,
+                        reason=str(exc),
+                        all_tests=all_tests,
+                    )
+                    continue
+                except (asyncio.CancelledError, KeyboardInterrupt):
+                    raise
+                except Exception as exc:
+                    await self._record_execution_error(
+                        scan_id=context.scan_id,
+                        category=SQLInjectionOracle.CATEGORY,
+                        route_template=norm_template,
+                        method=method,
+                        principal_id=None,
+                        target_path=target_path,
+                        headers=None,
+                        error_detail=str(exc),
+                        all_tests=all_tests,
+                    )
+                    continue
+
+                oracle_res = SQLInjectionOracle.evaluate(
+                    endpoint_path=target_path,
+                    response_status=resp.status_code,
+                    response_body=resp.text,
+                )
+
+                req_ev = capture_request_evidence(method, target_path, headers=None, body=None)
+                resp_ev = capture_response_evidence(
+                    resp.status_code,
+                    dict(resp.headers),
+                    resp.text,
+                    elapsed_ms,
+                )
+
+                test_case = TestCaseRecord(
+                    scan_id=context.scan_id,
+                    category=SQLInjectionOracle.CATEGORY,
+                    route_template=norm_template,
+                    method=method,
+                    principal_id=None,
+                    request=req_ev,
+                    response=resp_ev,
+                    oracle_result=oracle_res.model_dump(),
+                    status="executed",
+                )
+                await self._test_case_repo.save(test_case)
+                all_tests.append(test_case)
+
+                if oracle_res.fired:
+                    finding = CandidateFinding(
+                        scan_id=context.scan_id,
+                        project_id=context.project_id,
+                        title=f"SQL Injection at {norm_template}",
+                        category=SQLInjectionOracle.CATEGORY,
+                        cwe=[SQLInjectionOracle.CWE],
+                        route_template=norm_template,
+                        method=method,
+                        description=oracle_res.rationale,
+                        impact="Unsanitized user inputs are incorporated directly into SQL statements, leaking data.",
+                        runtime_confirmed=True,
+                        oracle_rule_id=oracle_res.rule_id,
+                        evidence_ids=[test_case.id],
+                        reproduction_summary=f"GET {target_path} triggered database syntax error.",
+                        source_locations=[
+                            {
+                                "file": route.source_file,
+                                "line_start": route.source_line_range[0],
+                                "line_end": route.source_line_range[1],
+                            }
+                        ] if route.source_file else [],
+                        status="candidate",
+                    )
+                    await self._finding_repo.save(finding)
+                    candidate_findings.append(finding)
+
+        executed_tests = [tc for tc in all_tests if tc.status == "executed"]
+        skipped_policy_tests = [tc for tc in all_tests if tc.status == "skipped_policy"]
+        failed_error_tests = [tc for tc in all_tests if tc.status == "failed_error"]
+
         return AttackerScanResult(
             scan_id=context.scan_id,
             project_id=context.project_id,
-            test_cases=executed_tests,
+            test_cases=all_tests,
             findings=candidate_findings,
             counters={
+                "tests_generated": len(all_tests),
                 "tests_executed": len(executed_tests),
+                "tests_skipped_policy": len(skipped_policy_tests),
+                "tests_failed_error": len(failed_error_tests),
                 "candidates": len(candidate_findings),
             },
         )

@@ -32,7 +32,7 @@ from app.agents.fixer.schemas import (
 )
 from app.core.config import settings
 from app.isolation.workspace import WorkspaceManager
-from app.llm.models import AgentName, LLMRequest, TrustLevel
+from app.llm.models import AgentName, LLMRequest, Message, TrustLevel
 from app.llm.prompts.registry import PromptRegistry
 from app.llm.provider import LLMProvider
 from app.llm.providers.mock_provider import MockLLMProvider
@@ -233,10 +233,12 @@ class FixerAgent:
                 req = LLMRequest(
                     prompt_id="fixer.generate_patch",
                     prompt_version="v1",
-                    system_prompt="You are a security patch generator. Emit valid unified diffs.",
-                    messages=[{"role": "user", "content": prompt_text}],
+                    system="You are a security patch generator. Emit valid unified diffs.",
+                    messages=[Message(role="user", content=prompt_text)],
                     response_schema=FixerProposal,
-                    trust_level=TrustLevel.QUARANTINED,
+                    trust=TrustLevel.QUARANTINED,
+                    scan_id=scan_id,
+                    agent=AgentName.FIXER,
                 )
                 resp = await self._provider.complete(request=req)
                 if resp.parsed and isinstance(resp.parsed, FixerProposal):
@@ -317,6 +319,15 @@ class FixerAgent:
         patches: list[PatchRecord] = []
         applied_count = 0
         rejected_count = 0
+
+        if not confirmed:
+            return FixerResult(
+                scan_id=scan_id,
+                project_id=project_id,
+                patches=[],
+                applied_count=0,
+                rejected_count=0,
+            )
 
         # Ensure modified workspace is created once before applying patches
         if modified_workspace_root is None:

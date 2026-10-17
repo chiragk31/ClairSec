@@ -141,5 +141,37 @@ async def test_builder_with_local_fixture_target_handle_seam():
 
         assert len(context.routes) >= 5
         assert context.canary_clean is True
+        assert len(context.auth_schemes) > 0
+        assert len(context.principals) >= 2
+        assert context.auth_scheme != "none"
+        # No tokens or passwords leaked in auth_schemes
+        for s in context.auth_schemes:
+            assert "Bearer" not in s or "token" not in s.lower()
+    finally:
+        await handle.stop()
+
+
+@pytest.mark.anyio
+async def test_builder_auth_schemes_and_principals_representation():
+    """Verify OpenAPI security schemes vs provisioned test principals are separate facts."""
+    vuln_dir = FIXTURES_DIR / "vulnerable_fastapi_app"
+    handle = LocalFixtureTargetHandle(vuln_dir)
+    await handle.start()
+
+    try:
+        builder = BuilderAgent()
+        context = await builder.build_context(
+            project_id="test-vuln-project",
+            scan_id="scan-auth-rep",
+            project_dir=vuln_dir,
+            target_handle=handle,
+        )
+
+        assert isinstance(context.auth_schemes, list)
+        assert isinstance(context.principals, list)
+        assert len(context.principals) >= 2
+        # auth_scheme property is available and backward compatible
+        assert context.auth_scheme != "none"
+        assert "bearer_token" in context.auth_schemes or any("OAuth" in s for s in context.auth_schemes)
     finally:
         await handle.stop()

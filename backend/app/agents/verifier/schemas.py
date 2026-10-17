@@ -3,10 +3,9 @@ Schemas for Phase 8 Re-test and Verification (DATA_MODEL.md §3 verification_res
 """
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any
-import uuid
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -99,3 +98,8 @@ class VerificationScanSummary(BaseModel):
     regressed_count: int = 0
     unresolved_count: int = 0
     unverified_count: int = 0
+
+    @property
+    def unfixed_count(self) -> int:
+        """Total count of findings not fixed (unresolved + regressed + unverified)."""
+        return self.unresolved_count + self.regressed_count + self.unverified_count

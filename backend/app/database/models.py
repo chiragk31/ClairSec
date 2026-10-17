@@ -155,7 +155,11 @@ class ScanRecord(BaseModel):
     error: str | None = None
     findings_confirmed: int = 0
     counters: dict[str, int] = Field(default_factory=lambda: {
+        "endpoints_discovered": 0,
+        "tests_generated": 0,
         "tests_executed": 0,
+        "tests_skipped_policy": 0,
+        "tests_failed_error": 0,
         "candidates": 0,
         "confirmed": 0,
         "rejected": 0,
@@ -164,5 +168,6 @@ class ScanRecord(BaseModel):
         "fixes_applied": 0,
         "fixes_verified": 0,
     })
+    stage_durations: dict[str, float] = Field(default_factory=dict)
 
     model_config = {"populate_by_name": True}

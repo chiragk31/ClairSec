@@ -8,15 +8,27 @@ Persists reproduced test cases to the test_cases repository.
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 import uuid
 
+from app.agents.attacker.evidence import sanitize_headers
 from app.agents.attacker.repository import TestCaseRepository
 from app.agents.attacker.schemas import TestCaseRecord
+from app.agents.builder.schemas import TestPrincipal
 from app.agents.evaluator.schemas import EvaluatorEvidence
 from app.security.http_client import ScopeLockedHttpClient
-from app.security.oracles import BOLAOracle, BOPLAMassAssignOracle, SecurityMisconfigOracle
+from app.security.oracles import (
+    BFLAOracle,
+    BOLAOracle,
+    BOPLAMassAssignOracle,
+    PathTraversalOracle,
+    SQLInjectionOracle,
+    SecurityMisconfigOracle,
+)
 from app.targets.handle import TargetHandle
+
+logger = logging.getLogger(__name__)
 
 
 class ReproductionResult:
@@ -51,6 +63,7 @@ class TestReproducer:
         evidence: EvaluatorEvidence,
         target_handle: TargetHandle,
         scan_id: str,
+        principals: list[TestPrincipal] | None = None,
     ) -> ReproductionResult:
         """
         Re-execute the test case against the target and evaluate the oracle.
@@ -58,11 +71,40 @@ class TestReproducer:
         req = evidence.request
         method = req.get("method", "GET").upper()
         url_path = req.get("url_path", "/")
-        headers = req.get("headers") or {}
+        headers = dict(req.get("headers") or {})
         req_body = req.get("body")
 
         category = evidence.category.upper()
         oracle_evidence = evidence.oracle_result.get("evidence") or {}
+
+        # Resolve authenticated credentials for reproduction if applicable
+        auth_header_val = headers.get("Authorization") or headers.get("authorization")
+        is_auth_redacted = bool(auth_header_val and ("<redacted" in auth_header_val or auth_header_val.strip() == ""))
+        target_principal: TestPrincipal | None = None
+
+        if principals:
+            # 1. Match by evidence.principal_id
+            cand_p_id = getattr(evidence, "principal_id", None)
+            if cand_p_id:
+                target_principal = next(
+                    (p for p in principals if p.user_id == cand_p_id or p.username == cand_p_id),
+                    None,
+                )
+
+            # 2. Match by oracle evidence role or category
+            if not target_principal and (is_auth_redacted or category in ("BOLA", "BOPLA_MASS_ASSIGN", "BFLA", "PATH_TRAVERSAL")):
+                req_role = oracle_evidence.get("role") or oracle_evidence.get("request_principal_role")
+                if req_role:
+                    target_principal = next(
+                        (p for p in principals if getattr(p, "role", "").lower() == str(req_role).lower()),
+                        None,
+                    )
+                if not target_principal:
+                    # Prefer unprivileged/member principal (e.g. Alice)
+                    target_principal = next((p for p in principals if not getattr(p, "is_admin", False)), principals[0])
+
+        if target_principal and target_principal.token:
+            headers["Authorization"] = target_principal.token
 
         try:
             async with ScopeLockedHttpClient(base_url=target_handle.base_url) as client:
@@ -76,15 +118,38 @@ class TestReproducer:
                 rep_req_data = {
                     "method": method,
                     "url_path": url_path,
-                    "headers": headers,
+                    "headers": sanitize_headers(headers),
                     "body": req_body,
                 }
                 rep_res_data = {
                     "status": resp.status_code,
-                    "headers": dict(resp.headers),
+                    "headers": sanitize_headers(dict(resp.headers)),
                     "body": resp.text,
                     "elapsed_ms": resp.elapsed.total_seconds() * 1000.0,
                 }
+
+                # Distinguish missing credentials from genuine authorization rejection
+                if resp.status_code == 401 and (is_auth_redacted or not target_principal):
+                    logger.warning(
+                        "Evaluator reproduction received HTTP 401 due to missing or invalid test credentials for %s (principal=%s)",
+                        url_path,
+                        getattr(evidence, "principal_id", None) or "unknown",
+                        extra={
+                            "event": "evaluator.reproduction.auth_failed",
+                            "endpoint": url_path,
+                            "principal_id": getattr(evidence, "principal_id", None),
+                        },
+                    )
+                    return ReproductionResult(
+                        reproduced=False,
+                        reproduced_request=rep_req_data,
+                        reproduced_response=rep_res_data,
+                        oracle_result={
+                            "fired": False,
+                            "rationale": "Missing or unauthenticated test principal credentials (HTTP 401)",
+                        },
+                        failure_reason="reproduction_inconclusive_missing_credentials: HTTP 401 received; credentials could not authenticate independent test",
+                    )
 
                 # Evaluate oracle on reproduced traffic
                 oracle_result_obj = None
@@ -126,11 +191,35 @@ class TestReproducer:
                     rep_res_data["status"] = read_resp.status_code
 
                 elif category == "SECURITY_MISCONFIG":
+                    req_origin = headers.get("Origin") or headers.get("origin")
                     oracle_result_obj = SecurityMisconfigOracle.evaluate(
                         endpoint_path=url_path,
                         response_status=resp.status_code,
                         response_body=resp.text,
                         response_headers=dict(resp.headers),
+                        request_origin=req_origin,
+                    )
+
+                elif category == "BFLA":
+                    oracle_result_obj = BFLAOracle.evaluate(
+                        request_principal_role=oracle_evidence.get("role") or "member",
+                        endpoint_path=url_path,
+                        response_status=resp.status_code,
+                        response_body=resp.text,
+                    )
+
+                elif category == "PATH_TRAVERSAL":
+                    oracle_result_obj = PathTraversalOracle.evaluate(
+                        endpoint_path=url_path,
+                        response_status=resp.status_code,
+                        response_body=resp.text,
+                    )
+
+                elif category == "SQL_INJECTION":
+                    oracle_result_obj = SQLInjectionOracle.evaluate(
+                        endpoint_path=url_path,
+                        response_status=resp.status_code,
+                        response_body=resp.text,
                     )
                 else:
                     # Generic fallback: if 2xx and oracle fired originally
