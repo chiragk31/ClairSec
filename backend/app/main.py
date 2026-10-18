@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.api import health, isolation, jobs, projects, scans
+from app.api import health, isolation, jobs, pipelines, projects, scans, system
 from app.core.auth import initialize_auth, validate_host_header, verify_token
 from app.core.config import settings
 from app.core.logging import log_context, setup_logging
@@ -33,6 +33,8 @@ async def lifespan(app: FastAPI):
         await ensure_indexes(db)
         job_service = JobService(db)
         await job_service.reconcile_startup()
+        from app.services.task_registry import reconcile_stale_tasks
+        await reconcile_stale_tasks(db)
     except Exception:
         if not settings.testing:
             raise
@@ -212,6 +214,51 @@ def create_app() -> FastAPI:
         scans.router,
         prefix="/api",
         tags=["scans"],
+        dependencies=[Depends(verify_token)],
+    )
+    app.include_router(
+        scans.ws_router,
+        prefix="/api",
+        tags=["scans"],
+    )
+
+    app.include_router(
+        system.router,
+        prefix="/api",
+        tags=["system"],
+        dependencies=[Depends(verify_token)],
+    )
+
+    app.include_router(
+        pipelines.router,
+        prefix="/api",
+        tags=["pipelines"],
+        dependencies=[Depends(verify_token)],
+    )
+
+    from app.api import assistant, bundles, findings, reports
+    app.include_router(
+        bundles.router,
+        prefix="/api",
+        tags=["bundles"],
+        dependencies=[Depends(verify_token)],
+    )
+    app.include_router(
+        findings.router,
+        prefix="/api",
+        tags=["findings"],
+        dependencies=[Depends(verify_token)],
+    )
+    app.include_router(
+        reports.router,
+        prefix="/api",
+        tags=["reports"],
+        dependencies=[Depends(verify_token)],
+    )
+    app.include_router(
+        assistant.router,
+        prefix="/api",
+        tags=["assistant"],
         dependencies=[Depends(verify_token)],
     )
 

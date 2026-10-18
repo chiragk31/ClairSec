@@ -3,6 +3,8 @@ Schemas for Phase 8 Re-test and Verification (DATA_MODEL.md §3 verification_res
 """
 from __future__ import annotations
 
+from typing import Any
+
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
@@ -30,6 +32,7 @@ class VerificationOutcome(str, Enum):
     REGRESSED = "regressed"
     UNRESOLVED = "unresolved"
     UNVERIFIED = "unverified"
+    VERIFICATION_UNAVAILABLE = "verification_unavailable"
 
 
 class OriginalExploitResult(BaseModel):
@@ -40,6 +43,8 @@ class OriginalExploitResult(BaseModel):
     ran: bool = False
     exploited: bool = False
     rationale: str = ""
+    # Redacted request/response captured during the re-test (shown by Replay, F8).
+    exchange: dict[str, Any] = Field(default_factory=dict)
 
 
 class FunctionalSuiteResult(BaseModel):
@@ -52,6 +57,23 @@ class FunctionalSuiteResult(BaseModel):
     failed: int = 0
     newly_failing: list[str] = Field(default_factory=list)
     total: int = 0
+    # Which suite produced this result: "fixture_suite" (the demo app's own tests),
+    # "auto_smoke" (read-only checks generated from the app's OpenAPI schema and
+    # compared against a pre-fix baseline) or "none".
+    source: str = "fixture_suite"
+    detail: str = ""
+
+
+class EndpointPreservedResult(BaseModel):
+    """Third proof (F9): the vulnerable route still exists in the patched code."""
+    __test__ = False
+    model_config = ConfigDict(extra="ignore")
+
+    ran: bool = False
+    preserved: bool = False
+    route: str = ""
+    method: str = ""
+    detail: str = ""
 
 
 class VariantAttackResult(BaseModel):
@@ -81,6 +103,7 @@ class VerificationRecord(BaseModel):
     original_exploit: OriginalExploitResult
     functional_suite: FunctionalSuiteResult
     variant_attack: VariantAttackResult
+    endpoint_preserved: EndpointPreservedResult = Field(default_factory=EndpointPreservedResult)
     outcome: VerificationOutcome
     outcome_reason: str = ""
     duration_s: float = 0.0

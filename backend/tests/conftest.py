@@ -34,23 +34,38 @@ def _docker_daemon_reachable() -> bool:
         return False
 
 
+def _github_reachable() -> bool:
+    """Check whether github.com answers over HTTPS. Returns False on any error."""
+    try:
+        import httpx
+        r = httpx.head("https://codeload.github.com", timeout=4.0, follow_redirects=False)
+        return r.status_code < 600
+    except Exception:
+        return False
+
+
 # Cache once per session — avoid re-probing on every test
 _DOCKER_AVAILABLE: bool | None = None
+_NETWORK_AVAILABLE: bool | None = None
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
-    """Skip docker-marked tests when the daemon is absent, before any fixture runs."""
-    global _DOCKER_AVAILABLE
-    if _DOCKER_AVAILABLE is None:
+    """Skip docker/network-marked tests when the dependency is absent, before any fixture runs."""
+    global _DOCKER_AVAILABLE, _NETWORK_AVAILABLE
+    wants_docker = any("docker" in item.keywords for item in items)
+    wants_network = any("network" in item.keywords for item in items)
+    if wants_docker and _DOCKER_AVAILABLE is None:
         _DOCKER_AVAILABLE = _docker_daemon_reachable()
+    if wants_network and _NETWORK_AVAILABLE is None:
+        _NETWORK_AVAILABLE = _github_reachable()
 
-    if _DOCKER_AVAILABLE:
-        return
-
-    skip_marker = pytest.mark.skip(reason="Docker daemon not available — skipping Docker tests")
+    skip_docker = pytest.mark.skip(reason="Docker daemon not available — skipping Docker tests")
+    skip_network = pytest.mark.skip(reason="github.com not reachable — skipping network tests")
     for item in items:
-        if "docker" in item.keywords:
-            item.add_marker(skip_marker)
+        if "docker" in item.keywords and not _DOCKER_AVAILABLE:
+            item.add_marker(skip_docker)
+        if "network" in item.keywords and not _NETWORK_AVAILABLE:
+            item.add_marker(skip_network)
 
 
 @pytest.fixture(scope="session", autouse=True)

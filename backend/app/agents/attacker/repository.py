@@ -8,6 +8,7 @@ from typing import Any
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.agents.attacker.schemas import CandidateFinding, TestCaseRecord
+from app.database.encoding import to_document
 
 TEST_CASES_COLLECTION = "test_cases"
 FINDINGS_COLLECTION = "findings"
@@ -24,7 +25,7 @@ class TestCaseRepository:
     async def save(self, record: TestCaseRecord) -> TestCaseRecord:
         self._memory_store[record.id] = record
         if self._db is not None:
-            doc = record.model_dump()
+            doc = to_document(record)
             doc["_id"] = doc["id"]
             await self._db[TEST_CASES_COLLECTION].insert_one(doc)
         return record
@@ -65,7 +66,7 @@ class FindingRepository:
     async def save(self, finding: CandidateFinding) -> CandidateFinding:
         self._memory_store[finding.id] = finding
         if self._db is not None:
-            doc = finding.model_dump()
+            doc = to_document(finding)
             doc["_id"] = doc["id"]
             await self._db[FINDINGS_COLLECTION].insert_one(doc)
         return finding

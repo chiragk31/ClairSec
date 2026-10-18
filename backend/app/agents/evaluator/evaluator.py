@@ -18,6 +18,7 @@ import logging
 from typing import Any
 import uuid
 
+from app.llm.factory import is_offline_provider
 from app.agents.attacker.repository import TestCaseRepository
 from app.agents.attacker.schemas import CandidateFinding, normalize_route_path
 from app.agents.builder.schemas import AgentContext, TestPrincipal
@@ -45,7 +46,6 @@ from app.agents.evaluator.schemas import (
     UserInteraction,
 )
 from app.agents.evaluator.verifier import EvidenceVerifier
-from app.core.config import settings
 from app.llm.models import AgentName, LLMRequest, Message, TrustLevel
 from app.llm.prompts.registry import PromptRegistry
 from app.llm.provider import LLMProvider
@@ -182,11 +182,13 @@ class EvaluatorAgent:
         test_case_repo: TestCaseRepository | None = None,
         finding_repo: FindingRepository | None = None,
         prompt_registry: PromptRegistry | None = None,
+        emitter: Any = None,
     ):
         self._provider = provider or MockLLMProvider()
         self._test_case_repo = test_case_repo or TestCaseRepository()
         self._finding_repo = finding_repo or FindingRepository()
         self._prompt_registry = prompt_registry or PromptRegistry()
+        self._emitter = emitter
         self._verifier = EvidenceVerifier()
         self._reproducer = TestReproducer(test_case_repo=self._test_case_repo)
 
@@ -346,7 +348,7 @@ class EvaluatorAgent:
         # Obtain CVSS metric inputs
         cvss_inputs = default_cvss
         try:
-            if settings.llm_provider != "mock":
+            if not is_offline_provider(self._provider):
                 prompt_text = self._prompt_registry.get_prompt(
                     "evaluator.triage",
                     "v1",
@@ -429,10 +431,12 @@ class EvaluatorAgent:
         scan_id: str,
         context: AgentContext | None = None,
         principals: list[TestPrincipal] | None = None,
+        emitter: Any = None,
     ) -> EvaluatorScanResult:
         """
         Evaluate all candidate findings produced by the Attacker Agent.
         """
+        active_emitter = emitter or self._emitter
         project_id = candidates[0].project_id if candidates else "unknown"
         if principals is None and context is not None:
             principals = getattr(context, "principals", None)
@@ -457,10 +461,35 @@ class EvaluatorAgent:
             if finding.status == EvaluationStatus.CONFIRMED:
                 confirmed_count += 1
                 confirmed_list.append(finding)
+                if active_emitter:
+                    await active_emitter(
+                        scan_id, "evaluator", "oracle_fired",
+                        f"Deterministic oracle fired for {finding.category}",
+                        refs={"finding_id": finding.id},
+                    )
+                    sev = finding.cvss.severity.value if finding.cvss and hasattr(finding.cvss, "severity") else None
+                    await active_emitter(
+                        scan_id, "evaluator", "finding_confirmed",
+                        finding.title,
+                        severity=sev,
+                        refs={"finding_id": finding.id},
+                    )
             elif finding.status == EvaluationStatus.REJECTED:
                 rejected_count += 1
+                if active_emitter:
+                    await active_emitter(
+                        scan_id, "evaluator", "finding_rejected",
+                        getattr(finding, "title", "False positive"),
+                        refs={"finding_id": getattr(finding, "id", None)},
+                    )
             elif finding.status == EvaluationStatus.INCONCLUSIVE:
                 inconclusive_count += 1
+                if active_emitter:
+                    await active_emitter(
+                        scan_id, "evaluator", "finding_inconclusive",
+                        getattr(finding, "title", "Inconclusive finding"),
+                        refs={"finding_id": getattr(finding, "id", None)},
+                    )
 
         return EvaluatorScanResult(
             scan_id=scan_id,

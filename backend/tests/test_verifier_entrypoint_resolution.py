@@ -18,6 +18,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from app.core.config import settings
 from app.agents.evaluator.schemas import (
     ConfidenceInputs,
     ConfidenceLevel,
@@ -269,7 +270,8 @@ async def test_zero_patches_verification_skips_startup(tmp_path: Path):
 # ─────────────────────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_verifier_startup_exception_without_secondary_attribute_error(tmp_path: Path):
+async def test_verifier_startup_exception_without_secondary_attribute_error(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(settings, "trusted_fixtures_root", tmp_path)
     scan_id = str(uuid.uuid4())
     project_id = str(uuid.uuid4())
 
@@ -289,6 +291,10 @@ async def test_verifier_startup_exception_without_secondary_attribute_error(tmp_
         applied=True,
     )
 
+    # This test exercises the host fixture runner's error path: Docker must look unavailable,
+    # otherwise the verifier (correctly) builds a patched container instead.
+    monkeypatch.setattr("app.agents.verifier.verifier.DockerManager",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("Docker daemon not available")))
     verifier = VerifierAgent(workspace_manager=ws_mgr)
 
     # Missing entrypoint should raise FileNotFoundError cleanly out of verify_scan
@@ -323,8 +329,9 @@ def test_verification_scan_summary_fields():
 
 
 @pytest.mark.asyncio
-async def test_scan_service_terminal_failure_on_verifier_error():
+async def test_scan_service_terminal_failure_on_verifier_error(monkeypatch):
     """Verify that if Verifier fails, the scan pipeline transitions to failed without AttributeError."""
+    monkeypatch.setattr(settings, "trusted_fixtures_root", Path("/dummy"))
     project_id = str(uuid.uuid4())
     scan_id = str(uuid.uuid4())
 
@@ -352,7 +359,7 @@ async def test_scan_service_terminal_failure_on_verifier_error():
 
     # Run pipeline with Verifier raising FileNotFoundError
     with (
-        patch("app.services.scan_service.LocalWorkspaceTargetHandle") as mock_handle_cls,
+        patch("app.services.scan_service.TrustedFixtureTargetHandle") as mock_handle_cls,
         patch("app.agents.builder.builder.BuilderAgent.build_context", new_callable=AsyncMock) as mock_builder,
         patch("app.agents.attacker.attacker.AttackerAgent.run_scan", new_callable=AsyncMock) as mock_attacker,
         patch("app.agents.evaluator.evaluator.EvaluatorAgent.evaluate_scan", new_callable=AsyncMock) as mock_evaluator,

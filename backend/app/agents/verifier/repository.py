@@ -9,6 +9,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.agents.verifier.schemas import VerificationRecord
 from app.database.client import get_database
+from app.database.encoding import to_document
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +38,7 @@ class VerificationRepository:
 
     async def create(self, record: VerificationRecord) -> VerificationRecord:
         """Persist a new VerificationRecord document."""
-        data = record.model_dump()
+        data = to_document(record)
 
         # Enforce size limits (DATA_MODEL.md §2)
         if data.get("outcome_reason") and len(data["outcome_reason"]) > _REASON_MAX_BYTES:

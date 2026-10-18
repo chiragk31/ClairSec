@@ -19,6 +19,8 @@ from typing import Any
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
+from app.agents.verifier import smoke_suite
+from app.llm.factory import build_provider, provider_name_for_scan
 from app.agents.attacker.attacker import AttackerAgent
 from app.agents.attacker.repository import TestCaseRepository
 from app.agents.builder.builder import BuilderAgent
@@ -29,20 +31,38 @@ from app.agents.fixer.repository import PatchRepository
 from app.agents.verifier.repository import VerificationRepository
 from app.agents.verifier.schemas import VerificationOutcome
 from app.agents.verifier.verifier import VerifierAgent
+from app.core.config import settings
 from app.core.logging import set_log_context
 from app.core.validators import validate_project_id
 from app.database.models import ProjectRecord, ScanRecord
 from app.database.repositories import ProjectRepository, ScanRepository
 from app.isolation.docker_manager import DockerManager
 from app.isolation.workspace import WorkspaceManager
+from app.services.event_bus import event_bus
+from app.services.task_registry import task_registry
+import anyio
 from app.targets.handle import (
     ContainerTargetHandle,
     LocalFixtureTargetHandle,
-    LocalWorkspaceTargetHandle,
     TargetHandle,
+    TrustedFixtureTargetHandle,
+    is_trusted_fixture_path,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _prompt_digest() -> str | None:
+    try:
+        from app.llm.prompts.registry import PromptRegistry
+
+        return PromptRegistry().digest
+    except Exception:  # noqa: BLE001 — metadata only; never fail a scan over it
+        return None
+
+
+class ScanNotCancellableError(Exception):
+    """Raised when cancelling a scan that has already finished."""
 
 # Unified diff hunk header, e.g. "@@ -126,6 +126,8 @@"
 _HUNK_RE = re.compile(r"^@@\s*-(\d+)(?:,(\d+))?\s+\+\d+(?:,\d+)?\s*@@")
@@ -101,9 +121,12 @@ class ScanService:
         self._active_tasks: dict[str, asyncio.Task] = {}
 
     @property
-    def _docker(self) -> DockerManager:
+    def _docker(self) -> DockerManager | None:
         if self._docker_instance is None:
-            self._docker_instance = DockerManager()
+            try:
+                self._docker_instance = DockerManager()
+            except Exception:
+                return None
         return self._docker_instance
 
     async def get_project(self, project_id: str) -> ProjectRecord | None:
@@ -134,12 +157,14 @@ class ScanService:
                 f"{project.validation_status}. Only valid projects can be scanned."
             )
 
+        origin = getattr(project, "origin", "user_project")
         # Create scan record in queued state
         scan = ScanRecord(
             project_id=project_id,
             project_name=project.name,
             state="running",
             stage="queued",
+            mode="demo" if origin == "demo_fixture" else "live",
             created_at=datetime.now(timezone.utc),
             started_at=datetime.now(timezone.utc),
         )
@@ -163,6 +188,42 @@ class ScanService:
             self._run_scan_pipeline(scan.id, project_id)
         )
         self._active_tasks[scan.id] = task
+        task_registry.register(scan.id, task)
+        return scan
+
+    TERMINAL_STATES = frozenset({"completed", "failed", "cancelled", "interrupted"})
+
+    async def cancel_scan(self, scan_id: str) -> ScanRecord | None:
+        """
+        Cancel an in-flight scan (C1, C2, D4).
+
+        Cancelling the registered task raises CancelledError inside the pipeline;
+        the verifier's ``finally`` tears down any patched container/proxy/network it
+        started. The project's own isolation container is a project resource and is
+        left running (the user stops it from the Projects screen).
+
+        Raises ScanNotCancellableError for scans already in a terminal state.
+        """
+        scan = await self._scan_repo.get_by_id(scan_id)
+        if scan is None:
+            return None
+        if scan.state in self.TERMINAL_STATES:
+            raise ScanNotCancellableError(f"Scan '{scan_id}' is already {scan.state}.")
+
+        task_registry.request_cancellation(scan_id)
+
+        scan.state = "cancelled"
+        scan.terminal_reason = "user_cancelled"
+        scan.ended_at = datetime.now(timezone.utc)
+        await self._scan_repo.update(scan)
+
+        await event_bus.emit(
+            scan_id=scan_id,
+            agent="system",
+            kind="error",
+            title="Scan cancelled",
+            plain="Scan was cancelled by user request.",
+        )
         return scan
 
     async def _run_scan_pipeline(self, scan_id: str, project_id: str) -> None:
@@ -201,6 +262,22 @@ class ScanService:
                 scan_id[:8],
                 extra={"event": "target.handle.acquiring"},
             )
+            # Provider is chosen per scan; Demo fixtures always use the offline
+            # provider so no model-written code can reach the host (F4).
+            provider_name = provider_name_for_scan(getattr(project, "origin", "user_project"))
+            if getattr(project, "origin", "user_project") == "demo_fixture":
+                scan.mode = "demo"
+            else:
+                # The mode badge must say which AI actually ran (FEATURES.md F4).
+                scan.mode = {"mock": "live_offline_ai", "replay": "live_offline_ai",
+                             "ollama": "live_local_ai"}.get(provider_name, "live")
+            llm = build_provider(provider_name)
+            scan.llm = {
+                "provider": llm.descriptor.provider,
+                "model_id": llm.descriptor.model_id,
+                "prompt_registry_digest": _prompt_digest(),
+            }
+
             if project.container_id and project.proxy_port:
                 target_handle = ContainerTargetHandle(
                     proxy_port=project.proxy_port,
@@ -220,39 +297,80 @@ class ScanService:
                 )
             else:
                 source_p = Path(project.source_path).resolve()
-                if "tests" in source_p.parts and "fixtures" in source_p.parts:
-                    target_handle = LocalFixtureTargetHandle(fixture_dir=source_p)
+                origin = getattr(project, "origin", None)
+                if origin is None:
+                    origin = "demo_fixture" if is_trusted_fixture_path(source_p) else "user_project"
+                if is_trusted_fixture_path(source_p) and origin == "demo_fixture":
+                    target_handle = TrustedFixtureTargetHandle(
+                        workspace_dir=source_p,
+                        entry_point=project.entry_point,
+                    )
                     logger.info(
-                        "Using local fixture target handle: %s",
+                        "Using trusted fixture target handle: %s",
                         source_p,
-                        extra={"event": "target.handle.acquired", "handle_type": "local_fixture"},
+                        extra={"event": "target.handle.acquired", "handle_type": "fixture"},
                     )
-                elif project.workspace_path and Path(project.workspace_path).exists():
-                    target_handle = LocalWorkspaceTargetHandle(
-                        workspace_dir=project.workspace_path,
-                        entry_point=project.entry_point,
-                    )
-                    logger.info(
-                        "Using local workspace target handle: %s",
-                        project.workspace_path,
-                        extra={"event": "target.handle.acquired", "handle_type": "local_workspace"},
-                    )
+                    await target_handle.start()
+                    own_handle = True
                 else:
-                    scan_ws = self._workspace.get_scan_workspace_path(project.id)
-                    if not scan_ws.exists():
-                        scan_ws = self._workspace.create_scan_workspace(project.id, project.source_path)
-                    target_handle = LocalWorkspaceTargetHandle(
-                        workspace_dir=scan_ws,
-                        entry_point=project.entry_point,
+                    # Non-fixture projects MUST run in hardened container isolation (F0, C3).
+                    # Auto-run isolation as the first step of the scan (F0, Autopilot F3).
+                    logger.info(
+                        "No running container for non-fixture project %s; auto-running isolation",
+                        project.id[:8],
+                        extra={"event": "scan.isolation.auto_start"},
+                    )
+                    from app.services.isolation_service import IsolationService
+                    from app.isolation.errors import IsolationError
+
+                    docker_mgr = self._docker
+                    if docker_mgr is None:
+                        raise IsolationError(
+                            f"isolation_required: Docker daemon is not available to isolate project {project.id}"
+                        )
+
+                    isolation_svc = IsolationService(
+                        db=self._db,
+                        docker_manager=docker_mgr,
+                        workspace_manager=self._workspace,
+                    )
+                    try:
+                        await event_bus.emit(scan.id, "system", "stage_started", "Container Isolation", "Auto-starting Docker isolation")
+                        project = await isolation_svc.start_isolation(project.id)
+                        await event_bus.emit(scan.id, "system", "stage_finished", "Container Isolation", "Container isolation established")
+                    except Exception as exc:
+                        await event_bus.emit(scan.id, "system", "error", f"Isolation failed: {exc}", detail=str(exc))
+                        logger.error(
+                            "Auto-isolation failed for project %s: %s",
+                            project.id[:8],
+                            exc,
+                            extra={"event": "scan.isolation.auto_failed", "error": str(exc)},
+                        )
+                        raise IsolationError(
+                            f"isolation_required: Project {project.id} cannot be scanned without container isolation: {exc}"
+                        ) from exc
+
+                    if not (project.container_id and project.proxy_port):
+                        raise IsolationError(
+                            f"isolation_required: Project {project.id} isolation completed without container/proxy."
+                        )
+
+                    target_handle = ContainerTargetHandle(
+                        proxy_port=project.proxy_port,
+                        container_id=project.container_id,
+                        docker_manager=docker_mgr,
                     )
                     logger.info(
-                        "Created and using local scan workspace handle: %s",
-                        scan_ws,
-                        extra={"event": "target.handle.acquired", "handle_type": "local_scan_workspace"},
+                        "Using container target handle after auto-isolation (container=%s, proxy_port=%s)",
+                        project.container_id[:12],
+                        project.proxy_port,
+                        extra={
+                            "event": "target.handle.acquired",
+                            "handle_type": "container",
+                            "container_id": project.container_id[:12],
+                            "proxy_port": project.proxy_port,
+                        },
                     )
-
-                await target_handle.start()
-                own_handle = True
 
             # ── 2. Stage: Builder ─────────────────────────────────────────────
             set_log_context(stage="builder")
@@ -260,13 +378,14 @@ class ScanService:
             scan.state = "running"
             scan.stage = "builder"
             await self._scan_repo.update(scan)
+            await event_bus.emit(scan.id, "builder", "stage_started", "Builder Agent", "Extracting API routes, auth schemes and principals")
             logger.info(
                 "Scan stage transitioned to 'builder'",
                 extra={"event": "scan.transition", "stage": "builder", "state": "running"},
             )
             logger.info("BuilderAgent starting context extraction", extra={"event": "scan.builder.started"})
 
-            builder = BuilderAgent()
+            builder = BuilderAgent(llm_provider=llm, emitter=event_bus.emit)
             project_dir = Path(project.workspace_path) if (project.workspace_path and Path(project.workspace_path).exists()) else Path(project.source_path)
             context = await builder.build_context(
                 project_id=project.id,
@@ -282,6 +401,8 @@ class ScanService:
             principals = getattr(context, "principals", [])
             auth_desc = ", ".join(auth_schemes) if auth_schemes else "none"
             principals_count = len(principals)
+
+            await event_bus.emit(scan.id, "builder", "stage_finished", "Builder Agent", f"Discovered {routes_count} endpoints")
             logger.info(
                 "BuilderAgent completed in %.2fs (routes=%d, auth_schemes=%s, principals=%d)",
                 builder_elapsed,
@@ -302,6 +423,7 @@ class ScanService:
             stage_start = time.monotonic()
             scan.stage = "attacker"
             await self._scan_repo.update(scan)
+            await event_bus.emit(scan.id, "attacker", "stage_started", "Attacker Agent", "Generating and executing targeted adversarial tests")
             logger.info(
                 "Scan stage transitioned to 'attacker'",
                 extra={"event": "scan.transition", "stage": "attacker", "state": "running"},
@@ -309,10 +431,12 @@ class ScanService:
             logger.info("AttackerAgent starting test execution", extra={"event": "scan.attacker.started"})
 
             test_case_repo = TestCaseRepository(self._db)
-            attacker = AttackerAgent(test_case_repo=test_case_repo)
+            token = task_registry.get_cancellation_token(scan.id)
+            attacker = AttackerAgent(test_case_repo=test_case_repo, llm_provider=llm, emitter=event_bus.emit)
             attacker_res = await attacker.run_scan(
                 context=context,
                 target_handle=target_handle,
+                cancellation_token=token,
             )
             attacker_elapsed = time.monotonic() - stage_start
             executed_count = len([tc for tc in attacker_res.test_cases if getattr(tc, "status", "executed") == "executed"])
@@ -326,6 +450,8 @@ class ScanService:
             scan.counters["tests_failed_error"] = failed_error_count
             scan.counters["candidates"] = len(attacker_res.findings)
             scan.stage_durations["attacker"] = round(attacker_elapsed, 3)
+
+            await event_bus.emit(scan.id, "attacker", "stage_finished", "Attacker Agent", f"Executed {executed_count} tests ({len(attacker_res.findings)} candidates)")
             logger.info(
                 "AttackerAgent completed in %.2fs (generated=%d, executed=%d, skipped_policy=%d, failed_error=%d, candidate_findings=%d)",
                 attacker_elapsed,
@@ -350,6 +476,7 @@ class ScanService:
             stage_start = time.monotonic()
             scan.stage = "evaluator"
             await self._scan_repo.update(scan)
+            await event_bus.emit(scan.id, "evaluator", "stage_started", "Evaluator Agent", "Adjudicating candidates with deterministic verification oracles")
             logger.info(
                 "Scan stage transitioned to 'evaluator'",
                 extra={"event": "scan.transition", "stage": "evaluator", "state": "running"},
@@ -361,8 +488,10 @@ class ScanService:
             )
 
             evaluator = EvaluatorAgent(
+                provider=llm,
                 test_case_repo=test_case_repo,
                 finding_repo=self._finding_repo,
+                emitter=event_bus.emit,
             )
             eval_res = await evaluator.evaluate_scan(
                 candidates=attacker_res.findings,
@@ -382,6 +511,7 @@ class ScanService:
             rejected_ids = [f.id for f in eval_res.rejected_findings]
             inconclusive_ids = [f.id for f in eval_res.inconclusive_findings]
 
+            await event_bus.emit(scan.id, "evaluator", "stage_finished", "Evaluator Agent", f"Confirmed {eval_res.confirmed_count} vulnerabilities")
             logger.info(
                 "EvaluatorAgent completed in %.2fs (confirmed=%d, rejected=%d, inconclusive=%d)",
                 evaluator_elapsed,
@@ -400,11 +530,29 @@ class ScanService:
                 },
             )
 
+            # Compute initial security posture score (F6)
+            from app.scoring.posture import compute_posture
+            raw_findings = [f.model_dump() if hasattr(f, "model_dump") else dict(f) for f in eval_res.findings]
+            raw_tests = [tc.model_dump() if hasattr(tc, "model_dump") else dict(tc) for tc in attacker_res.test_cases]
+            scan.posture = compute_posture(findings=raw_findings, test_cases=raw_tests)
+
+            # Functional baseline for projects without their own suite (F9): read-only
+            # smoke checks from the app's OpenAPI schema, observed on the ORIGINAL target.
+            functional_baseline = None
+            if not is_trusted_fixture_path(project.source_path) and confirmed_findings:
+                functional_baseline = await smoke_suite.record_baseline(target_handle.base_url)
+                logger.info(
+                    "Recorded functional smoke baseline: %s case(s)",
+                    len(functional_baseline.cases) if functional_baseline else 0,
+                    extra={"event": "scan.functional_baseline"},
+                )
+
             # ── 5. Stage: Fixer ───────────────────────────────────────
             set_log_context(stage="fixer")
             stage_start = time.monotonic()
             scan.stage = "fixer"
             await self._scan_repo.update(scan)
+            await event_bus.emit(scan.id, "fixer", "stage_started", "Fixer Agent", "Synthesizing AST remediation code patches")
             logger.info(
                 "Scan stage transitioned to 'fixer' (confirmed=%d, rejected=%d, inconclusive=%d)",
                 len(confirmed_findings),
@@ -440,8 +588,10 @@ class ScanService:
 
             mod_ws = self._workspace.create_modified_workspace(project.id)
             fixer = FixerAgent(
+                provider=llm,
                 patch_repo=self._patch_repo,
                 workspace_manager=self._workspace,
+                emitter=event_bus.emit,
             )
             fix_res = await fixer.fix_scan(
                 findings=confirmed_findings,
@@ -454,6 +604,8 @@ class ScanService:
             scan.counters["fixes_proposed"] = len(fix_res.patches)
             scan.counters["fixes_applied"] = fix_res.applied_count
             scan.stage_durations["fixer"] = round(fixer_elapsed, 3)
+
+            await event_bus.emit(scan.id, "fixer", "stage_finished", "Fixer Agent", f"Synthesized {len(fix_res.patches)} code patches")
             logger.info(
                 "FixerAgent completed in %.2fs (patches proposed=%d, applied=%d)",
                 fixer_elapsed,
@@ -472,6 +624,7 @@ class ScanService:
             stage_start = time.monotonic()
             scan.stage = "verifier"
             await self._scan_repo.update(scan)
+            await event_bus.emit(scan.id, "verifier", "stage_started", "Verifier Agent", "Re-executing exploits against patched target")
             logger.info(
                 "Scan stage transitioned to 'verifier' (findings=%d, patches=%d)",
                 len(confirmed_findings),
@@ -497,10 +650,14 @@ class ScanService:
                 },
             )
 
+            token = task_registry.get_cancellation_token(scan.id)
             verifier = VerifierAgent(
                 verification_repo=self._verification_repo,
                 test_case_repo=test_case_repo,
                 workspace_manager=self._workspace,
+                docker_manager=self._docker,
+                emitter=event_bus.emit,
+                provider_name=provider_name,
             )
             ver_summary = await verifier.verify_scan(
                 findings=confirmed_findings,
@@ -508,10 +665,15 @@ class ScanService:
                 scan_id=scan.id,
                 modified_workspace=mod_ws,
                 entry_point=project.entry_point,
+                project=project,
+                functional_baseline=functional_baseline,
+                cancellation_token=token,
             )
             verifier_elapsed = time.monotonic() - stage_start
             scan.counters["fixes_verified"] = ver_summary.fixed_count
             scan.stage_durations["verifier"] = round(verifier_elapsed, 3)
+
+            await event_bus.emit(scan.id, "verifier", "stage_finished", "Verifier Agent", f"Remediation verified: {ver_summary.fixed_count} fixed")
             logger.info(
                 "VerifierAgent completed in %.2fs (fixed=%d, unresolved=%d, regressed=%d, unverified=%d, unfixed=%d)",
                 verifier_elapsed,
@@ -530,6 +692,16 @@ class ScanService:
                     "unfixed": ver_summary.unfixed_count,
                 },
             )
+
+            # Recompute posture after verification (F6)
+            ver_records_map = {
+                r.finding_id: r.outcome.value if hasattr(r.outcome, "value") else str(r.outcome)
+                for r in ver_summary.records
+            }
+            for rf in raw_findings:
+                if rf.get("id") in ver_records_map:
+                    rf["verification_outcome"] = ver_records_map[rf["id"]]
+            scan.posture = compute_posture(findings=raw_findings, test_cases=raw_tests)
 
             # ── 7. Complete Scan Record ───────────────────────────────
             set_log_context(stage="completed")
@@ -553,6 +725,20 @@ class ScanService:
             })
             await self._scan_repo.update(scan)
             total_elapsed = time.monotonic() - pipeline_start_time
+
+            # Emit budget and completion events
+            await event_bus.emit(
+                scan.id,
+                "system",
+                "budget",
+                "Resource budget summary",
+                budget={
+                    "tests_executed": executed_count,
+                    "fixes_verified": ver_summary.fixed_count,
+                    "elapsed_s": round(total_elapsed, 2),
+                },
+            )
+            await event_bus.emit(scan.id, "system", "stage_finished", "Scan Completed", f"Scan finished in {total_elapsed:.1f}s")
             logger.info(
                 "Scan %s completed successfully in %.2fs: %d confirmed, %d fixes verified",
                 scan_id[:8],
@@ -569,9 +755,25 @@ class ScanService:
                 },
             )
 
+        except asyncio.CancelledError:
+            total_elapsed = time.monotonic() - pipeline_start_time
+            logger.info("Scan %s was cancelled after %.2fs", scan_id[:8], total_elapsed)
+            try:
+                cur_scan = await self._scan_repo.get_by_id(scan_id)
+                if cur_scan:
+                    cur_scan.state = "cancelled"
+                    cur_scan.terminal_reason = "user_cancelled"
+                    cur_scan.ended_at = datetime.now(timezone.utc)
+                    await self._scan_repo.update(cur_scan)
+            except Exception as repo_err:
+                logger.error("Failed to persist cancelled status for scan %s: %s", scan_id[:8], repo_err)
+            await event_bus.emit(scan_id, "system", "error", "Scan cancelled", plain="Scan was cancelled.")
+            raise
+
         except Exception as exc:  # noqa: BLE001
             total_elapsed = time.monotonic() - pipeline_start_time
             failed_stage = scan.stage
+            await event_bus.emit(scan.id, "system", "error", f"Scan pipeline failed: {exc}", detail=str(exc))
             logger.exception(
                 "Scan %s pipeline failed in stage '%s' after %.2fs: %s",
                 scan_id[:8],
@@ -618,6 +820,7 @@ class ScanService:
                         extra={"event": "target.handle.stop_failed"},
                     )
             self._active_tasks.pop(scan_id, None)
+            task_registry.unregister(scan_id)
 
     async def get_scan_patches_formatted(self, scan_id: str) -> list[dict[str, Any]]:
         """
@@ -661,6 +864,15 @@ class ScanService:
                         "failed": ver.functional_suite.failed,
                         "total": ver.functional_suite.total,
                         "newlyFailing": list(ver.functional_suite.newly_failing),
+                        "source": ver.functional_suite.source,
+                        "detail": ver.functional_suite.detail,
+                    },
+                    "endpointPreserved": {
+                        "ran": ver.endpoint_preserved.ran,
+                        "preserved": ver.endpoint_preserved.preserved,
+                        "route": ver.endpoint_preserved.route,
+                        "method": ver.endpoint_preserved.method,
+                        "detail": ver.endpoint_preserved.detail,
                     },
                     "variantAttack": {
                         "ran": ver.variant_attack.ran,

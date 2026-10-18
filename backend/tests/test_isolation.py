@@ -152,7 +152,7 @@ class TestDockerfileGeneration:
         assert '"uvicorn", "main:app"' in content
 
     def test_dockerfile_entry_point_converted_to_module(self, tmp_path):
-        """src/api/app.py → src.api.app in uvicorn CMD."""
+        """src/api/app.py → --app-dir src/api app:app in uvicorn CMD (C9)."""
         from app.isolation.docker_manager import DockerManager
 
         with patch("docker.from_env"):
@@ -164,7 +164,7 @@ class TestDockerfileGeneration:
             dependency_file="requirements.txt",
         )
         content = (tmp_path / "Dockerfile").read_text()
-        assert '"uvicorn", "src.api.app:app"' in content
+        assert '"uvicorn", "app:app", "--app-dir", "src/api"' in content
 
     def test_dockerfile_fallback_for_pyproject(self, tmp_path):
         """pyproject.toml → pip install . in fallback template."""
@@ -198,7 +198,7 @@ class TestIsolationErrorHandling:
             # Re-import to trigger the constructor
             import importlib
             importlib.reload(docker_manager)
-            with pytest.raises(IsolationError, match="Cannot connect to Docker"):
+            with pytest.raises(IsolationError, match="Cannot connect to the Docker daemon"):
                 docker_manager.DockerManager()
 
 

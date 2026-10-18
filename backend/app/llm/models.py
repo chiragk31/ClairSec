@@ -21,6 +21,7 @@ class AgentName(str, Enum):
     ATTACKER = "ATTACKER"
     EVALUATOR = "EVALUATOR"
     FIXER = "FIXER"
+    ASSISTANT = "ASSISTANT"  # read-only explainer (FEATURES.md F11); decides nothing
 
 
 class ModelDescriptor(BaseModel):

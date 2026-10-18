@@ -49,9 +49,11 @@ class BuilderAgent:
         self,
         llm_provider: LLMProvider | None = None,
         ledger: LLMCallLedger | None = None,
+        emitter: Any = None,
     ):
         self._provider = llm_provider or MockLLMProvider()
         self._ledger = ledger or LLMCallLedger()
+        self._emitter = emitter
 
     async def build_context(
         self,
@@ -111,6 +113,13 @@ class BuilderAgent:
                             existing.input_fields = o_route.input_fields
                     else:
                         route_map[key] = o_route
+
+        if self._emitter:
+            for (tmpl, meth), item in sorted(route_map.items()):
+                try:
+                    await self._emitter(scan_id, "builder", "endpoint_discovered", f"{meth} {tmpl}")
+                except Exception:
+                    pass
 
         # ---------------------------------------------------------------------
         # Step 3: Quarantined LLM Semantic Extraction (LLM.md §6)

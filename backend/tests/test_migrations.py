@@ -67,29 +67,33 @@ class TestSchemaMigrations:
                 return mock_migrations_col
             elif name == "projects":
                 return mock_projects_col
-            return MagicMock()
+            mock_col = MagicMock()
+            mock_col.create_index = AsyncMock()
+            mock_col.update_many = AsyncMock()
+            return mock_col
 
         mock_db.__getitem__ = MagicMock(side_effect=get_col)
 
         await run_migrations(mock_db)
 
         # Assert v001 upgrade ran and updated records
-        mock_projects_col.update_many.assert_awaited_once_with(
+        import unittest.mock
+        assert unittest.mock.call(
             {"schema_version": {"$exists": False}},
             {"$set": {"schema_version": 1}},
-        )
+        ) in mock_projects_col.update_many.call_args_list
         # Assert recorded in schema_migrations
-        mock_migrations_col.insert_one.assert_awaited_once()
-        call_args = mock_migrations_col.insert_one.call_args[0][0]
-        assert call_args["name"] == v001_initial.MIGRATION_ID
-        assert "applied_at" in call_args
+        assert mock_migrations_col.insert_one.await_count >= 1
+        recorded_names = [call[0][0]["name"] for call in mock_migrations_col.insert_one.call_args_list]
+        assert v001_initial.MIGRATION_ID in recorded_names
 
     @pytest.mark.asyncio
     async def test_run_migrations_skips_already_applied(self):
+        from app.database.migrations import runner
         mock_db = MagicMock()
         mock_migrations_col = MagicMock()
         mock_cursor = MagicMock()
-        mock_cursor.to_list = AsyncMock(return_value=[{"name": "v001_initial"}])
+        mock_cursor.to_list = AsyncMock(return_value=[{"name": m[0]} for m in runner.MIGRATIONS])
         mock_migrations_col.find = MagicMock(return_value=mock_cursor)
         mock_migrations_col.insert_one = AsyncMock()
 
@@ -101,13 +105,16 @@ class TestSchemaMigrations:
                 return mock_migrations_col
             elif name == "projects":
                 return mock_projects_col
-            return MagicMock()
+            mock_col = MagicMock()
+            mock_col.create_index = AsyncMock()
+            mock_col.update_many = AsyncMock()
+            return mock_col
 
         mock_db.__getitem__ = MagicMock(side_effect=get_col)
 
         await run_migrations(mock_db)
 
-        # Assert v001 upgrade was skipped
+        # Assert all upgrades were skipped
         mock_projects_col.update_many.assert_not_awaited()
         mock_migrations_col.insert_one.assert_not_awaited()
 

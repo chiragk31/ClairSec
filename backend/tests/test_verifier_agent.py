@@ -50,7 +50,7 @@ from app.agents.verifier.schemas import (
 )
 from app.agents.verifier.verifier import VerifierAgent
 from app.isolation.workspace import WorkspaceManager
-from app.targets.handle import LocalFixtureTargetHandle, LocalWorkspaceTargetHandle
+from app.targets.handle import LocalFixtureTargetHandle, TrustedFixtureTargetHandle
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 VULN_FIXTURE = FIXTURES_DIR / "vulnerable_fastapi_app"
@@ -95,6 +95,14 @@ def _make_dummy_finding(
         status=EvaluationStatus.CONFIRMED,
     )
 
+
+
+def _fixture_project(project_id: str):
+    """The project record production passes to the verifier (trust comes only from it, D5)."""
+    from app.database.models import ProjectRecord
+
+    return ProjectRecord(id=project_id, name="vulnerable fixture", source_path=str(VULN_FIXTURE),
+                         entry_point="main.py", dependency_file="requirements.txt", origin="demo_fixture")
 
 @pytest.mark.asyncio
 async def test_verifier_confirms_dual_criterion_fixed_on_all_three_seeded_vulns(tmp_path: Path):
@@ -165,6 +173,7 @@ async def test_verifier_confirms_dual_criterion_fixed_on_all_three_seeded_vulns(
             patches=fix_res.patches,
             scan_id=scan_id,
             modified_workspace=mod_ws,
+            project=_fixture_project(project_id),
         )
 
         # Four-way outcome assertions
@@ -255,6 +264,7 @@ async def test_adversarial_regression_delete_endpoint_patch_lands_on_regressed(t
         patch=patch_record,
         scan_id=scan_id,
         modified_workspace=mod_ws,
+        project=_fixture_project(project_id),
     )
 
     # CRITICAL DUAL CRITERION ASSERTION:
@@ -309,6 +319,7 @@ async def test_verifier_ineffective_patch_lands_on_unresolved(tmp_path: Path):
         patch=patch_record,
         scan_id=scan_id,
         modified_workspace=mod_ws,
+        project=_fixture_project(project_id),
     )
 
     # Exploit still fires -> UNRESOLVED
@@ -359,6 +370,7 @@ async def test_verifier_broken_rebuild_lands_on_unverified(tmp_path: Path):
         patch=patch_record,
         scan_id=scan_id,
         modified_workspace=mod_ws,
+        project=_fixture_project(project_id),
     )
 
     # Rebuild failed -> UNVERIFIED

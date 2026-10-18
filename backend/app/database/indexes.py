@@ -23,6 +23,14 @@ JOBS_INDEXES = [
     pymongo.IndexModel([("status", pymongo.ASCENDING)], name="idx_jobs_status"),
 ]
 
+AGENT_EVENTS_INDEXES = [
+    pymongo.IndexModel(
+        [("scan_id", pymongo.ASCENDING), ("seq", pymongo.ASCENDING)],
+        unique=True,
+        name="idx_agent_events_scan_seq_unique",
+    ),
+]
+
 
 async def ensure_indexes(db: AsyncIOMotorDatabase) -> None:
     """
@@ -51,3 +59,9 @@ async def ensure_indexes(db: AsyncIOMotorDatabase) -> None:
     assert "idx_jobs_status" in existing_jobs_indexes, "Required index 'idx_jobs_status' missing from jobs collection"
 
     logger.info("Database index assertion passed.")
+
+
+async def ensure_agent_events_indexes(db: AsyncIOMotorDatabase) -> None:
+    """Ensure unique index on agent_events collection."""
+    agent_events_col = db["agent_events"]
+    await agent_events_col.create_indexes(AGENT_EVENTS_INDEXES)

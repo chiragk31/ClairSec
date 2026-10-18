@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ClairSec report: {{ d.project.name }}</title>
+<style>
+:root{--bg:#f6f8fa;--surface:#fff;--raised:#eef1f4;--border:#d0d7de;--text:#1f2328;--muted:#59636e;--accent:#0969da;
+--crit:#c9182b;--high:#bc4c00;--med:#9a6700;--low:#1b7c83;--info:#59636e;--ok:#1a7f37;--warn:#9a6700;--bad:#cf222e;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:#0d1117;--surface:#161b22;--raised:#21262d;--border:#30363d;--text:#e6edf3;--muted:#9198a1;
+--accent:#58a6ff;--crit:#ff6b6b;--high:#ff9f43;--med:#f2cc60;--low:#56d4dd;--info:#9198a1;--ok:#3fb950;--warn:#d29922;--bad:#f85149;color-scheme:dark}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.55 Inter,Segoe UI,system-ui,sans-serif}
+main{max-width:1000px;margin:0 auto;padding:32px 20px}
+h1{font-size:28px;margin:0 0 4px}h2{font-size:20px;margin:40px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+h3{font-size:16px;margin:0 0 6px}.muted{color:var(--muted)}.mono,code,pre{font-family:"JetBrains Mono",Consolas,monospace;font-size:13px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 18px;margin:12px 0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.score{display:flex;gap:28px;align-items:center;flex-wrap:wrap}
+.big{font-size:44px;font-weight:700;line-height:1}.grade{font-size:18px;font-weight:700}
+.badge{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:700;border:1px solid currentColor}
+.sev-critical{color:var(--crit)}.sev-high{color:var(--high)}.sev-medium{color:var(--med)}.sev-low{color:var(--low)}
+.sev-informational,.sev-unscored{color:var(--info)}.ok{color:var(--ok)}.bad{color:var(--bad)}.warn{color:var(--warn)}
+pre{background:var(--raised);border-radius:8px;padding:12px;overflow-x:auto;white-space:pre-wrap;word-break:break-word}
+table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);vertical-align:top}
+.wrap{overflow-x:auto}.steps{margin:6px 0 0;padding-left:18px}.plain{background:var(--raised);border-radius:8px;padding:10px 12px}
+@media print{body{background:#fff;color:#000}.card{break-inside:avoid}h2{break-after:avoid}a{color:#000}}
+</style>
+</head>
+<body><main>
+<header>
+  <div class="muted">ClairSec security report · generated {{ d.generated_at }}</div>
+  <h1>{{ d.project.name }}</h1>
+  <div class="muted">Scan {{ d.scan.id }} · mode: {{ d.method.experience_mode }}{% if d.project.git_url %} · {{ d.project.git_url }}{% endif %}{% if d.project.commit_sha %} @ <span class="mono">{{ d.project.commit_sha[:12] }}</span>{% endif %}</div>
+</header>
+
+{% if audience in ("both", "exec") %}
+<h2 id="executive">Executive summary</h2>
+<div class="card score">
+  {% if d.posture and d.posture.get("before") is not none %}
+  <div><div class="muted">Before fixes</div><div class="big">{{ d.posture.before }}</div><div class="grade">Grade {{ d.posture.grade_before }}</div></div>
+  <div class="big muted">→</div>
+  <div><div class="muted">After verified fixes</div><div class="big {% if d.posture.after > d.posture.before %}ok{% endif %}">{{ d.posture.after }}</div><div class="grade">Grade {{ d.posture.grade_after }}</div></div>
+  {% endif %}
+  <div style="flex:1;min-width:240px">
+    {% for s in d.summary %}<p style="margin:0 0 8px">{{ s }}</p>{% endfor %}
+    {% if d.posture.basis %}<p class="muted" style="margin:0">{{ d.posture.basis }}</p>{% endif %}
+    {% if d.posture.limited_coverage %}<p class="warn" style="margin:6px 0 0"><b>Limited coverage:</b> fewer than half of the vulnerability categories could be tested.</p>{% endif %}
+  </div>
+</div>
+
+{% if d.confirmed %}
+<h3>Top risks</h3>
+<div class="grid">
+{% for f in d.confirmed[:6] %}
+  <div class="card"><span class="badge sev-{{ f.severity }}">{{ f.severity|upper }}</span>
+    <h3 style="margin-top:8px">{{ f.title }}</h3>
+    <div>{{ f.business_impact or f.impact }}</div>
+    <div class="muted" style="margin-top:6px">{% if f.verification and f.verification.outcome == "fixed" %}<span class="ok">Fix verified</span>{% elif f.patch %}Fix proposed: {{ f.verification.outcome if f.verification else "not yet verified" }}{% else %}Needs a developer{% endif %}</div>
+  </div>
+{% endfor %}
+</div>
+{% endif %}
+
+<div class="grid">
+  <div class="card"><h3>Fixed and verified</h3>{% if d.fixed %}<ul class="steps">{% for f in d.fixed %}<li>{{ f.title }}</li>{% endfor %}</ul>{% else %}<span class="muted">None.</span>{% endif %}</div>
+  <div class="card"><h3>Needs a human</h3>{% if d.needs_human %}<ul class="steps">{% for f in d.needs_human %}<li>{{ f.title }} <span class="muted">({{ f.verification.outcome if f.verification else "no verified fix" }})</span></li>{% endfor %}</ul>{% else %}<span class="muted">Nothing outstanding from the attacks that ran.</span>{% endif %}</div>
+</div>
+{% endif %}
+
+{% if audience in ("both", "technical") %}
+<h2 id="findings">Confirmed findings ({{ d.confirmed|length }})</h2>
+<p class="muted">Only findings proved by a platform oracle and reproduced are listed here. Suspicions are listed separately below.</p>
+{% for f in d.confirmed %}
+<div class="card" id="f-{{ f.id }}">
+  <span class="badge sev-{{ f.severity }}">{{ f.severity|upper }}</span>
+  {% if f.cvss_score is not none %}<span class="muted mono"> CVSS {{ f.cvss_score }}</span>{% endif %}
+  <h3 style="margin-top:8px">{{ f.title }}</h3>
+  <div class="muted mono">{{ f.method }} {{ f.route }}</div>
+  <table style="margin-top:8px"><tr><th>Category</th><td>{{ f.category_name }} ({{ f.category }})</td></tr>
+  <tr><th>OWASP API Top 10</th><td>{{ f.owasp }}</td></tr><tr><th>CWE</th><td>{{ f.cwe }}</td></tr>
+  {% if f.cvss_vector %}<tr><th>CVSS vector</th><td class="mono">{{ f.cvss_vector }} <span class="muted">(score computed by platform code)</span></td></tr>{% endif %}
+  {% if f.source_locations %}<tr><th>Source</th><td class="mono">{% for l in f.source_locations %}{{ l.file or l.path }}{% if l.line or l.start_line %}:{{ l.line or l.start_line }}{% endif %}<br>{% endfor %}</td></tr>{% endif %}
+  </table>
+  {% if f.plain %}<p class="plain"><b>In plain words:</b> {{ f.plain }}</p>{% endif %}
+  {% if f.description %}<p>{{ f.description }}</p>{% endif %}
+  <h3>Why you can trust this</h3>
+  <ol class="steps">{% for s in f.provenance.steps %}<li><b>{{ s.who }}</b>: {{ s.title }} <span class="muted">· {{ s.detail }}</span></li>{% endfor %}</ol>
+  {% if f.replays %}<h3 style="margin-top:12px">Replay</h3><ul class="steps">{% for t, r in f.replays.items() %}<li>{{ t|title }} app: {% if r.state == "completed" %}{% if r.oracle_fired %}<span class="bad">attack worked</span>{% else %}<span class="ok">attack blocked</span>{% endif %} (HTTP {{ r.exchange.response.status if r.exchange and r.exchange.response else "?" }}){% else %}{{ r.state }}{% endif %}</li>{% endfor %}</ul>{% endif %}
+  {% if f.patch %}
+  <h3 style="margin-top:12px">Fix</h3>
+  {% if f.patch.rationale %}<p class="muted">{{ f.patch.rationale }}</p>{% endif %}
+  <pre>{{ f.patch.diff }}</pre>
+  {% endif %}
+  {% if f.verification %}
+  <h3>Verification: {% if f.verification.outcome == "fixed" %}<span class="ok">Fix verified</span>{% elif f.verification.outcome == "regressed" %}<span class="bad">Regressed</span>{% elif f.verification.outcome == "unresolved" %}<span class="bad">Fix failed</span>{% else %}<span class="warn">Verification unavailable</span>{% endif %}</h3>
+  <ul class="steps">
+    <li>Exploit blocked: {{ "yes" if f.verification.exploit_blocked else "no" }}</li>
+    <li>App still works{% if f.verification.suite.source == "auto_smoke" %} (auto-generated tests){% endif %}: {% if f.verification.suite.ran %}{{ f.verification.suite.passed }}/{{ f.verification.suite.total }} passed{% else %}not checked{% endif %}</li>
+    <li>Endpoint preserved: {% if f.verification.endpoint.ran %}{{ "yes" if f.verification.endpoint.preserved else "no" }}{% else %}unknown{% endif %}</li>
+  </ul>
+  <p class="muted mono">{{ f.verification.reason }}</p>
+  {% endif %}
+</div>
+{% else %}
+<div class="card muted">No vulnerability was proved by the attacks that ran. This does not mean none exist.</div>
+{% endfor %}
+
+{% if d.project.exposed_secrets %}
+<h2 id="secrets">Exposed secrets in the code ({{ d.project.exposed_secrets|length }})</h2>
+<p class="muted">Credentials committed to the repository. Values are masked in this report; treat every one as leaked and rotate it.</p>
+<div class="wrap"><table><tr><th>Type</th><th>File</th><th>Line</th><th>Masked value</th></tr>
+{% for s in d.project.exposed_secrets %}<tr><td>{{ s.type }}</td><td class="mono">{{ s.file }}</td><td>{{ s.line }}</td><td class="mono">{{ s.preview }}</td></tr>{% endfor %}
+</table></div>
+{% endif %}
+
+{% if d.candidates %}
+<h2 id="candidates">Candidates and suspicions ({{ d.candidates|length }})</h2>
+<p class="muted">Not confirmed: there was no oracle evidence, or it could not be reproduced. Not counted in the score.</p>
+<div class="wrap"><table><tr><th>Title</th><th>Endpoint</th><th>Status</th><th>Reason</th></tr>
+{% for f in d.candidates %}<tr><td>{{ f.title }}</td><td class="mono">{{ f.method }} {{ f.route }}</td><td>{{ f.status }}</td><td>{{ f.status_reason or "" }}</td></tr>{% endfor %}
+</table></div>
+{% endif %}
+
+<h2 id="method">Coverage and method</h2>
+<div class="grid">
+  <div class="card"><h3>Tested categories</h3>{% if d.coverage.tested %}{{ d.coverage.tested|join(", ") }}{% else %}<span class="muted">none</span>{% endif %}
+    <p class="muted">{{ d.coverage.tests_executed }} of {{ d.coverage.tests_total }} planned tests executed; {{ d.coverage.requests_recorded }} attack requests recorded in total, including independent re-runs.</p></div>
+  <div class="card"><h3>Not tested</h3>{% if d.coverage.untested %}<ul class="steps">{% for u in d.coverage.untested %}<li>{{ u.category }} <span class="muted">· {{ u.reason }}</span></li>{% endfor %}</ul>{% else %}<span class="muted">All in-scope categories were exercised.</span>{% endif %}</div>
+</div>
+<div class="card"><table>
+  <tr><th>Platform version</th><td class="mono">{{ d.method.platform_version }}</td></tr>
+  <tr><th>AI provider / model</th><td class="mono">{{ d.method.llm_provider }} / {{ d.method.model_id }}</td></tr>
+  <tr><th>Prompt registry digest</th><td class="mono">{{ d.method.prompt_registry_digest }}</td></tr>
+  <tr><th>Score formula</th><td class="mono">{{ d.method.posture_version }}</td></tr>
+  <tr><th>Experience mode</th><td class="mono">{{ d.method.experience_mode }}</td></tr>
+  <tr><th>Storage</th><td class="mono">{{ d.method.storage_mode }}</td></tr>
+</table>
+<p class="muted">AI models only proposed tests and fixes. Every verdict in this report (confirmed, severity, score, fix verified) was computed by platform code from recorded requests and responses.</p></div>
+
+<h2 id="appendix">Appendix</h2>
+<div class="wrap"><table><tr><th>Category</th><th>Endpoint</th><th>Status</th><th>HTTP</th><th>Oracle</th></tr>
+{% for t in d.tests %}<tr><td>{{ t.category }}</td><td class="mono">{{ t.method }} {{ t.route }}</td><td>{{ t.status }}</td><td>{{ t.http_status if t.http_status is not none else "" }}</td><td>{{ "fired" if t.oracle_fired else "clear" }}</td></tr>{% endfor %}
+</table></div>
+{% if d.timeline %}<h3 style="margin-top:20px">Timeline excerpt</h3><ol class="steps">{% for e in d.timeline %}<li><span class="mono muted">#{{ e.seq }} {{ e.agent }}</span> {{ e.title }}</li>{% endfor %}</ol>{% endif %}
+{% endif %}
+</main></body></html>

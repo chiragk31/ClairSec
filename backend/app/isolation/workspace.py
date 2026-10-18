@@ -47,6 +47,16 @@ class WorkspaceManager:
         """Return the modified_workspace/ path for this project (Phase 7)."""
         return self.get_project_root(project_id) / MODIFIED_WORKSPACE_SUBDIR
 
+    def get_source_path(self, project_id: str) -> Path | None:
+        """Return the resolved source path this workspace was created from, if recorded."""
+        marker = self.get_project_root(project_id) / ".source_path"
+        if marker.exists():
+            try:
+                return Path(marker.read_text(encoding="utf-8").strip())
+            except Exception:
+                return None
+        return None
+
     def create_modified_workspace(self, project_id: str, reset: bool = True) -> Path:
         """
         Populate modified_workspace from scan_workspace (PHASES.md Phase 7).
@@ -182,6 +192,10 @@ class WorkspaceManager:
         t0 = time.perf_counter()
         try:
             dest.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                (dest.parent / ".source_path").write_text(str(source), encoding="utf-8")
+            except Exception:
+                pass
             shutil.copytree(
                 src=source,
                 dst=dest,

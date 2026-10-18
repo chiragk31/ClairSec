@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 import uuid
 
+from app.llm.factory import is_offline_provider
 from app.agents.builder.schemas import AgentContext
 from app.agents.evaluator.schemas import EvaluatedFinding
 from app.agents.fixer.patch_engine import PatchEngine
@@ -30,7 +31,6 @@ from app.agents.fixer.schemas import (
     PatchRecord,
     PatchValidation,
 )
-from app.core.config import settings
 from app.isolation.workspace import WorkspaceManager
 from app.llm.models import AgentName, LLMRequest, Message, TrustLevel
 from app.llm.prompts.registry import PromptRegistry
@@ -120,11 +120,13 @@ class FixerAgent:
         patch_repo: PatchRepository | None = None,
         workspace_manager: WorkspaceManager | None = None,
         prompt_registry: PromptRegistry | None = None,
+        emitter: Any = None,
     ) -> None:
         self._provider = provider or MockLLMProvider()
         self._patch_repo = patch_repo or PatchRepository()
         self._workspace_manager = workspace_manager or WorkspaceManager()
         self._prompt_registry = prompt_registry or PromptRegistry()
+        self._emitter = emitter
 
     async def fix_finding(
         self,
@@ -211,7 +213,7 @@ class FixerAgent:
         llm_call_id: str | None = None
 
         cat = finding.category.upper()
-        if cat in _CANONICAL_DIFFS and (settings.llm_provider == "mock" or not source_code):
+        if cat in _CANONICAL_DIFFS and (is_offline_provider(self._provider) or not source_code):
             canon = _CANONICAL_DIFFS[cat]
             root_cause = canon["root_cause"]
             rationale = canon["rationale"]
@@ -311,10 +313,12 @@ class FixerAgent:
         project_id: str,
         scan_id: str,
         modified_workspace_root: Path | None = None,
+        emitter: Any = None,
     ) -> FixerResult:
         """
         Run the Fixer Agent on all confirmed findings for a scan.
         """
+        active_emitter = emitter or self._emitter
         confirmed = [f for f in findings if f.status.value == "confirmed"]
         patches: list[PatchRecord] = []
         applied_count = 0
@@ -346,8 +350,25 @@ class FixerAgent:
             patches.append(patch_record)
             if patch_record.applied:
                 applied_count += 1
+                if active_emitter:
+                    await active_emitter(
+                        scan_id,
+                        "fixer",
+                        "patch_proposed",
+                        f"Remediation patch for {finding.id}",
+                        refs={"patch_id": patch_record.id, "finding_id": finding.id},
+                    )
             else:
                 rejected_count += 1
+                if active_emitter:
+                    await active_emitter(
+                        scan_id,
+                        "fixer",
+                        "patch_rejected",
+                        f"Patch rejected for {finding.id}",
+                        detail=patch_record.apply_error or "",
+                        refs={"patch_id": patch_record.id, "finding_id": finding.id},
+                    )
 
         return FixerResult(
             scan_id=scan_id,

@@ -83,7 +83,8 @@ class TestAsyncDisciplineNonDocker:
             return "test-image:latest"
 
         try:
-            with patch("app.services.job_service.WorkspaceManager.create_scan_workspace", return_value="/tmp/ws"), \
+            with patch("app.isolation.docker_manager.DockerManager.__init__", return_value=None), \
+                 patch("app.services.job_service.WorkspaceManager.create_scan_workspace", return_value="/tmp/ws"), \
                  patch("app.isolation.docker_manager.DockerManager.build_image", side_effect=slow_build), \
                  patch("app.isolation.docker_manager.DockerManager.start_container", return_value=("c123", "target-123")), \
                  patch("app.isolation.docker_manager.DockerManager.start_proxy", return_value=("p123", 54321)), \

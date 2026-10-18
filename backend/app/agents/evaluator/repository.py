@@ -9,6 +9,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.agents.evaluator.schemas import EvaluatedFinding
 from app.database.client import get_database
+from app.database.encoding import to_document
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +38,7 @@ class FindingRepository:
     async def create(self, finding: EvaluatedFinding | dict[str, Any]) -> EvaluatedFinding:
         """Persist a new EvaluatedFinding document."""
         if hasattr(finding, "model_dump"):
-            data = finding.model_dump()
+            data = to_document(finding)
         elif isinstance(finding, dict):
             data = dict(finding)
         else:

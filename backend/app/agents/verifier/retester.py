@@ -9,6 +9,7 @@ import json
 import logging
 from typing import Any
 
+from app.agents.attacker.evidence import capture_request_evidence, capture_response_evidence
 from app.agents.attacker.repository import TestCaseRepository
 from app.agents.evaluator.schemas import EvaluatedFinding
 from app.agents.verifier.schemas import OriginalExploitResult
@@ -24,6 +25,14 @@ from app.security.oracles import (
 from app.targets.handle import TargetHandle
 
 logger = logging.getLogger(__name__)
+
+
+
+def _elapsed_ms(resp: Any) -> float | None:
+    try:
+        return round(resp.elapsed.total_seconds() * 1000, 1)
+    except Exception:  # noqa: BLE001 — elapsed is unavailable on some transports
+        return None
 
 
 class OriginalExploitRetester:
@@ -89,6 +98,14 @@ class OriginalExploitRetester:
                     headers=headers,
                     json=body if isinstance(body, (dict, list)) else None,
                 )
+                exchange = {
+                    "request": capture_request_evidence(
+                        req_method, url_path, headers, body if isinstance(body, (dict, list)) else None,
+                    ),
+                    "response": capture_response_evidence(
+                        resp.status_code, dict(resp.headers), resp.text, _elapsed_ms(resp),
+                    ),
+                }
 
                 if category == "BOLA":
                     req_principal = oracle_evidence.get("request_principal") or "usr_alice_01"
@@ -103,6 +120,7 @@ class OriginalExploitRetester:
                         ran=True,
                         exploited=oracle_res.fired,
                         rationale=oracle_res.rationale,
+                        exchange=exchange,
                     )
 
                 elif category == "BOPLA_MASS_ASSIGN":
@@ -131,6 +149,7 @@ class OriginalExploitRetester:
                         ran=True,
                         exploited=oracle_res.fired,
                         rationale=oracle_res.rationale,
+                        exchange=exchange,
                     )
 
                 elif category == "SECURITY_MISCONFIG":
@@ -146,6 +165,7 @@ class OriginalExploitRetester:
                         ran=True,
                         exploited=oracle_res.fired,
                         rationale=oracle_res.rationale,
+                        exchange=exchange,
                     )
 
                 elif category == "BFLA":
@@ -159,6 +179,7 @@ class OriginalExploitRetester:
                         ran=True,
                         exploited=oracle_res.fired,
                         rationale=oracle_res.rationale,
+                        exchange=exchange,
                     )
 
                 elif category == "PATH_TRAVERSAL":
@@ -171,6 +192,7 @@ class OriginalExploitRetester:
                         ran=True,
                         exploited=oracle_res.fired,
                         rationale=oracle_res.rationale,
+                        exchange=exchange,
                     )
 
                 elif category == "SQL_INJECTION":
@@ -183,6 +205,7 @@ class OriginalExploitRetester:
                         ran=True,
                         exploited=oracle_res.fired,
                         rationale=oracle_res.rationale,
+                        exchange=exchange,
                     )
 
                 else:
@@ -192,6 +215,7 @@ class OriginalExploitRetester:
                         ran=True,
                         exploited=is_exp,
                         rationale=f"Generic check returned status {resp.status_code}",
+                        exchange=exchange,
                     )
 
         except Exception as exc:

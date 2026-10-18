@@ -10,6 +10,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.agents.fixer.schemas import PatchRecord
 from app.database.client import get_database
+from app.database.encoding import to_document
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,7 @@ class PatchRepository:
 
     async def create(self, record: PatchRecord) -> PatchRecord:
         """Persist a new PatchRecord document."""
-        data = record.model_dump()
+        data = to_document(record)
 
         # Enforce size limits (DATA_MODEL.md §2)
         if data.get("apply_error") and len(data["apply_error"]) > _ERROR_MAX_BYTES:

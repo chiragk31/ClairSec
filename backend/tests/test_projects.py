@@ -167,3 +167,10 @@ class TestProjectsAPI:
         )
         assert response.status_code == 201
         assert response.json()["name"] == "My Custom App"
+
+
+def test_import_rejects_empty_or_relative_path(authed_client):
+    """Found in live testing: an empty path resolved to the backend's own folder and was imported."""
+    for bad in ("", "   ", "relative/folder", "."):
+        r = authed_client.post("/api/projects", json={"path": bad})
+        assert r.status_code == 422, (bad, r.status_code, r.text)

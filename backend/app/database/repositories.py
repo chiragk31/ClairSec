@@ -8,7 +8,8 @@ from datetime import datetime, timezone
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.database.client import get_database
-from app.database.models import JobRecord, ProjectRecord, ScanRecord
+from app.database.models import JobRecord, PipelineRecord, ProjectRecord, ScanRecord
+from app.database.encoding import to_document
 
 COLLECTION = "projects"
 
@@ -31,7 +32,7 @@ class ProjectRepository:
         self._memory_store[record.id] = record
         coll = self._get_collection()
         if coll is not None:
-            doc = record.model_dump()
+            doc = to_document(record)
             # MongoDB stores _id; we use our own string 'id' field.
             doc["_id"] = doc["id"]
             await coll.insert_one(doc)
@@ -55,13 +56,24 @@ class ProjectRepository:
             return _from_doc(doc)
         return None
 
+    async def find_by_source_path(self, source_path: str) -> ProjectRecord | None:
+        for r in self._memory_store.values():
+            if r.source_path == source_path:
+                return r
+        coll = self._get_collection()
+        if coll is not None:
+            doc = await coll.find_one({"source_path": source_path})
+            if doc is not None:
+                return _from_doc(doc)
+        return None
+
     async def update(self, record: ProjectRecord) -> ProjectRecord:
         """Update an existing document by its id field."""
         record.updated_at = datetime.now(tz=timezone.utc)
         self._memory_store[record.id] = record
         coll = self._get_collection()
         if coll is not None:
-            doc = record.model_dump()
+            doc = to_document(record)
             doc.pop("_id", None)  # never overwrite Mongo _id
             await coll.update_one(
                 {"id": record.id},
@@ -79,37 +91,78 @@ JOBS_COLLECTION = "jobs"
 
 
 class JobRepository:
-    def __init__(self, db: AsyncIOMotorDatabase) -> None:
-        self._col = db[JOBS_COLLECTION]
+    def __init__(self, db: AsyncIOMotorDatabase | None = None) -> None:
+        self._db = db
+        self._memory_store: dict[str, JobRecord] = {}
+
+    def _get_collection(self):
+        if self._db is not None:
+            return self._db[JOBS_COLLECTION]
+        try:
+            db = get_database()
+            return db[JOBS_COLLECTION]
+        except Exception:
+            return None
 
     async def create(self, record: JobRecord) -> JobRecord:
-        doc = record.model_dump()
-        doc["_id"] = doc["id"]
-        await self._col.insert_one(doc)
+        self._memory_store[record.id] = record
+        coll = self._get_collection()
+        if coll is not None:
+            doc = to_document(record)
+            doc["_id"] = doc["id"]
+            await coll.insert_one(doc)
         return record
 
     async def get_by_id(self, job_id: str) -> JobRecord | None:
-        doc = await self._col.find_one({"id": job_id})
-        if doc is None:
-            return None
-        return _from_job_doc(doc)
+        coll = self._get_collection()
+        if coll is not None:
+            doc = await coll.find_one({"id": job_id})
+            if doc is None:
+                return None
+            record = _from_job_doc(doc)
+            self._memory_store[job_id] = record
+            return record
+        return self._memory_store.get(job_id)
 
     async def update(self, record: JobRecord) -> JobRecord:
         record.updated_at = datetime.now(tz=timezone.utc)
-        doc = record.model_dump()
-        doc.pop("_id", None)
-        await self._col.update_one(
-            {"id": record.id},
-            {"$set": doc},
-        )
+        self._memory_store[record.id] = record
+        coll = self._get_collection()
+        if coll is not None:
+            doc = to_document(record)
+            doc.pop("_id", None)
+            await coll.update_one(
+                {"id": record.id},
+                {"$set": doc},
+            )
         return record
+
+    async def update_status(
+        self,
+        job_id: str,
+        status: JobStatus,
+        stage: str | None = None,
+        error: str | None = None,
+    ) -> JobRecord | None:
+        job = await self.get_by_id(job_id)
+        if job:
+            job.status = status
+            if stage:
+                job.stage = stage
+            if error:
+                job.error = error
+            await self.update(job)
+        return job
 
     async def get_active_jobs(self) -> list[JobRecord]:
         """Return jobs in 'pending' or 'running' state."""
-        docs = await self._col.find(
-            {"status": {"$in": ["pending", "running"]}}
-        ).to_list(length=1000)
-        return [_from_job_doc(d) for d in docs]
+        coll = self._get_collection()
+        if coll is not None:
+            docs = await coll.find(
+                {"status": {"$in": ["pending", "running"]}}
+            ).to_list(length=1000)
+            return [_from_job_doc(d) for d in docs]
+        return [j for j in self._memory_store.values() if j.status in (JobStatus.PENDING, JobStatus.RUNNING)]
 
 
 def _from_job_doc(doc: dict) -> JobRecord:
@@ -141,7 +194,7 @@ class ScanRepository:
         self._memory_store[record.id] = record
         coll = self._get_collection()
         if coll is not None:
-            doc = record.model_dump()
+            doc = to_document(record)
             doc["_id"] = doc["id"]
             await coll.insert_one(doc)
         return record
@@ -183,8 +236,57 @@ class ScanRepository:
         self._memory_store[record.id] = record
         coll = self._get_collection()
         if coll is not None:
-            doc = record.model_dump()
+            doc = to_document(record)
             doc.pop("_id", None)
             await coll.update_one({"id": record.id}, {"$set": doc})
         return record
+
+
+_shared_pipeline_store: dict[str, PipelineRecord] = {}
+
+
+class PipelineRepository:
+    def __init__(self, db: AsyncIOMotorDatabase | None = None) -> None:
+        self._db = db
+        self._memory_store = _shared_pipeline_store
+
+    def _get_collection(self):
+        if self._db is not None:
+            return self._db["pipelines"]
+        try:
+            db = get_database()
+            return db["pipelines"]
+        except Exception:
+            return None
+
+    async def create(self, record: PipelineRecord) -> PipelineRecord:
+        self._memory_store[record.id] = record
+        coll = self._get_collection()
+        if coll is not None:
+            doc = to_document(record)
+            doc["_id"] = doc["id"]
+            await coll.insert_one(doc)
+        return record
+
+    async def get_by_id(self, pipeline_id: str) -> PipelineRecord | None:
+        if pipeline_id in self._memory_store:
+            return self._memory_store[pipeline_id]
+        coll = self._get_collection()
+        if coll is not None:
+            doc = await coll.find_one({"id": pipeline_id})
+            if doc:
+                doc.pop("_id", None)
+                return PipelineRecord.model_validate(doc)
+        return None
+
+    async def update(self, record: PipelineRecord) -> PipelineRecord:
+        record.updated_at = datetime.now(tz=timezone.utc)
+        self._memory_store[record.id] = record
+        coll = self._get_collection()
+        if coll is not None:
+            doc = to_document(record)
+            doc.pop("_id", None)
+            await coll.update_one({"id": record.id}, {"$set": doc})
+        return record
+
 

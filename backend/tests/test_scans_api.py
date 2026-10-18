@@ -18,6 +18,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.core.auth import initialize_auth
+from app.core.config import settings
 from app.database.client import get_database
 from app.database.models import IsolationStatus, ProjectRecord, ValidationStatus
 from app.database.repositories import ProjectRepository
@@ -26,6 +27,18 @@ from app.services.scan_service import ScanService
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 VULN_FIXTURE = FIXTURES_DIR / "vulnerable_fastapi_app"
+
+
+def _scan_wait_budget() -> float:
+    """With a Docker daemon the verifier builds one patched image per fix (minutes);
+    without Docker the demo fixture runs on the trusted host runner (seconds)."""
+    try:
+        import docker
+
+        docker.from_env(timeout=3).ping()
+        return 900.0
+    except Exception:
+        return 120.0
 
 
 @pytest.fixture
@@ -108,7 +121,7 @@ async def test_scans_api_full_pipeline_against_vulnerable_app(tmp_path: Path):
         assert any(s["id"] == scan_id for s in scans_list)
 
         # 3. Poll GET /api/scans/{id} until completed (background task executes)
-        max_wait = 120.0
+        max_wait = _scan_wait_budget()
         start_time = time.time()
         final_scan = None
 
@@ -220,7 +233,7 @@ async def test_scans_api_pipeline_against_secure_app():
         scan_id = body.get("scan_id") or body.get("scanId")
 
         # Poll until complete
-        max_wait = 120.0
+        max_wait = _scan_wait_budget()
         start_time = time.time()
         final_scan = None
 
@@ -252,7 +265,8 @@ async def test_scans_api_pipeline_against_secure_app():
 
 
 @pytest.mark.asyncio
-async def test_scans_api_pipeline_with_prohibited_delete_route(tmp_path):
+async def test_scans_api_pipeline_with_prohibited_delete_route(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "trusted_fixtures_root", tmp_path)
     """
     Integration test: Runs a complete scan pipeline against an app containing
     a prohibited DELETE route (/admin/users/{user_id}) alongside safe routes.

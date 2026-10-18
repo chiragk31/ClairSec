@@ -26,6 +26,7 @@ from __future__ import annotations
 import logging
 import time
 from pathlib import Path
+from typing import Any
 
 import docker
 import docker.errors
@@ -140,7 +141,7 @@ ENV PYTHONPATH=/app
 WORKDIR /app
 
 # Install dependencies first for layer caching (as root)
-COPY {dep_file} .
+COPY {dep_file} {dep_file}
 RUN pip install --no-cache-dir -r {dep_file}
 
 # Copy the rest of the project
@@ -148,7 +149,7 @@ COPY . .
 {user_directive}
 EXPOSE {port}
 
-CMD ["uvicorn", "{entry_module}:app", "--host", "0.0.0.0", "--port", "{port}"]
+{cmd_directive}
 """
 
 _DOCKERFILE_PYPROJECT_TEMPLATE = """\
@@ -165,7 +166,7 @@ RUN pip install --no-cache-dir .
 {user_directive}
 EXPOSE {port}
 
-CMD ["uvicorn", "{entry_module}:app", "--host", "0.0.0.0", "--port", "{port}"]
+{cmd_directive}
 """
 
 # Scanner proxy server script executed inside the proxy container.
@@ -243,7 +244,9 @@ class DockerManager:
                 self._client = docker.from_env()
             except docker.errors.DockerException as exc:
                 raise IsolationError(
-                    f"Cannot connect to Docker daemon. Is Docker running? Details: {exc}"
+                    "Cannot connect to the Docker daemon. Start Docker Desktop, wait "
+                    "until the whale icon says 'Engine running', then retry. "
+                    f"Details: {exc}"
                 ) from exc
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -316,14 +319,33 @@ class DockerManager:
         return f"{_IMAGE_PREFIX}-{project_id[:8]}:latest"
 
     @staticmethod
+    def patched_image_tag(project_id: str, patch_id: str) -> str:
+        return f"{_IMAGE_PREFIX}-{project_id[:8]}-patched:{patch_id[:8]}"
+
+    @staticmethod
     def container_name(project_id: str) -> str:
         """Deterministic name for target container."""
         return f"{_CONTAINER_PREFIX}-{project_id[:8]}"
 
     @staticmethod
+    def patched_container_name(project_id: str, patch_id: str) -> str:
+        """Deterministic name for patched target container."""
+        return f"{_CONTAINER_PREFIX}-{project_id[:8]}-p-{patch_id[:8]}"
+
+    @staticmethod
     def proxy_name(project_id: str) -> str:
         """Deterministic name for scanner proxy container."""
         return f"{_PROXY_PREFIX}-{project_id[:8]}"
+
+    @staticmethod
+    def patched_proxy_name(project_id: str, patch_id: str) -> str:
+        """Deterministic name for scanner proxy container dedicated to patched target."""
+        return f"{_PROXY_PREFIX}-{project_id[:8]}-p-{patch_id[:8]}"
+
+    @staticmethod
+    def patched_network_name(project_id: str, patch_id: str) -> str:
+        """Deterministic name for internal network dedicated to patched target."""
+        return f"cs-net-{project_id[:8]}-p-{patch_id[:8]}"
 
     # ─────────────────────────────────────────────────────────────────────────
     # Dockerfile generation
@@ -337,11 +359,21 @@ class DockerManager:
     ) -> None:
         """
         Write a generated Dockerfile into the scan workspace.
-        Enforces non-root user and root pip install per C3.2.
+        Enforces non-root user, root pip install, POSIX path normalization,
+        and --app-dir for nested entry points (C3.2, C9).
         """
-        entry_module = entry_point.replace("/", ".").replace("\\", ".").removesuffix(".py")
+        entry_posix = entry_point.replace("\\", "/").strip("/")
+        dep_posix = dependency_file.replace("\\", "/").strip("/") if dependency_file else None
         port = str(settings.docker_target_port)
         base_image = settings.docker_base_image
+
+        if "/" in entry_posix:
+            app_dir, bare_filename = entry_posix.rsplit("/", 1)
+            bare_module = bare_filename.removesuffix(".py")
+            cmd_directive = f'CMD ["uvicorn", "{bare_module}:app", "--app-dir", "{app_dir}", "--host", "0.0.0.0", "--port", "{port}"]'
+        else:
+            bare_module = entry_posix.removesuffix(".py")
+            cmd_directive = f'CMD ["uvicorn", "{bare_module}:app", "--host", "0.0.0.0", "--port", "{port}"]'
 
         user_directive = ""
         if settings.docker_non_root:
@@ -359,25 +391,95 @@ class DockerManager:
                 f"chmod 777 {settings.docker_sqlite_data_dir}\n"
             )
 
-        if dependency_file and dependency_file.endswith(".txt"):
+        if dep_posix and dep_posix.endswith(".txt"):
             content = _DOCKERFILE_TEMPLATE.format(
                 base_image=base_image,
-                dep_file=dependency_file,
+                dep_file=dep_posix,
                 port=port,
-                entry_module=entry_module,
+                cmd_directive=cmd_directive,
                 user_directive=user_directive,
             )
         else:
             content = _DOCKERFILE_PYPROJECT_TEMPLATE.format(
                 base_image=base_image,
                 port=port,
-                entry_module=entry_module,
+                cmd_directive=cmd_directive,
                 user_directive=user_directive,
             )
 
         dockerfile_path = workspace_path / "Dockerfile"
         dockerfile_path.write_text(content, encoding="utf-8")
         logger.debug("Wrote generated Dockerfile to %s", dockerfile_path)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Preflight / base image
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def preflight(self) -> dict[str, Any]:
+        """
+        Report whether Docker is ready to build and run targets.
+
+        Never raises: every failure is returned as data so the UI can show the
+        user exactly what to fix instead of a stack trace.
+        """
+        report: dict[str, Any] = {
+            "daemon_reachable": False,
+            "server_version": None,
+            "base_image": settings.docker_base_image,
+            "base_image_present": False,
+            "ready": False,
+            "hint": None,
+        }
+        try:
+            self._client.ping()
+            report["daemon_reachable"] = True
+            report["server_version"] = self._client.version().get("Version")
+        except Exception as exc:  # noqa: BLE001
+            report["hint"] = f"Docker daemon is not responding: {exc}"
+            return report
+        try:
+            self._client.images.get(settings.docker_base_image)
+            report["base_image_present"] = True
+        except docker.errors.ImageNotFound:
+            report["hint"] = (
+                "Base image is not cached locally; it will be pulled on the "
+                "first build (needs internet)."
+            )
+        except Exception as exc:  # noqa: BLE001
+            report["hint"] = f"Could not inspect base image: {exc}"
+        report["ready"] = report["daemon_reachable"]
+        return report
+
+    def ensure_base_image(self) -> None:
+        """
+        Pull the pinned base image if it is not cached, before the build starts.
+
+        Without this the pull happens implicitly inside the build and is charged
+        against the build timeout, so a slow first-time download looks like a
+        hung or failed build.
+        """
+        image = settings.docker_base_image
+        try:
+            self._client.images.get(image)
+            return
+        except docker.errors.ImageNotFound:
+            pass
+        logger.info(
+            "Base image %s not cached; pulling it now",
+            image,
+            extra={"event": "docker.base_image.pulling"},
+        )
+        try:
+            self._client.images.pull(image)
+        except Exception as exc:  # noqa: BLE001
+            raise IsolationError(
+                f"Could not pull base image {image}: {exc}\n"
+                "\nCheck your internet connection and that Docker Desktop is "
+                "signed in/online. If the pinned digest no longer exists, "
+                "re-resolve it: docker pull python:3.11-slim && docker inspect "
+                "--format='{{index .RepoDigests 0}}' python:3.11-slim, then set "
+                "DOCKER_BASE_IMAGE in backend/.env."
+            ) from exc
 
     # ─────────────────────────────────────────────────────────────────────────
     # Image build
@@ -388,13 +490,15 @@ class DockerManager:
         project_id: str,
         workspace_path: Path,
         entry_point: str,
-        dependency_file: str | None,
+        dependency_file: str | None = None,
+        tag: str | None = None,
     ) -> str:
         """
         Write a Dockerfile into the workspace and build a Docker image.
         Build runs on the default network mode (internet enabled for pip install).
         """
-        tag = self.image_tag(project_id)
+        tag = tag or self.image_tag(project_id)
+        self.ensure_base_image()
         self._write_dockerfile(workspace_path, entry_point, dependency_file)
         dockerfile_path = workspace_path / "Dockerfile"
 
@@ -524,6 +628,8 @@ class DockerManager:
         image_tag: str,
         command: str | list[str] | None = None,
         environment: dict[str, str] | None = None,
+        container_name: str | None = None,
+        network_name: str | None = None,
     ) -> tuple[str, str]:
         """
         Start the hardened, isolated target container on a per-scan internal network.
@@ -538,10 +644,13 @@ class DockerManager:
           - NO Docker socket or host volumes mounted
           - environment: target configuration only (no host secrets)
         """
-        name = self.container_name(project_id)
+        name = container_name or self.container_name(project_id)
         self._remove_container_by_name(name)
 
-        net = self.ensure_target_network(project_id)
+        if network_name:
+            net = self.ensure_internal_network(network_name, project_id)
+        else:
+            net = self.ensure_target_network(project_id)
 
         tmpfs_config = {"/tmp": "rw,noexec,nosuid,size=64m"} if settings.docker_read_only else None
 
@@ -623,31 +732,56 @@ class DockerManager:
                 f"Failed to start container for project {project_id}: {exc}"
             ) from exc
 
+    def ensure_internal_network(self, net_name: str, project_id: str) -> docker.models.networks.Network:
+        """Create or retrieve an internal bridge network (internal=True, C3.3)."""
+        try:
+            net = self._client.networks.get(net_name)
+            net.reload()
+            return net
+        except (docker.errors.NotFound, docker.errors.APIError):
+            try:
+                net = self._client.networks.create(
+                    net_name,
+                    driver="bridge",
+                    internal=True,
+                    labels={"managed-by": "clairsec", "project-id": project_id, "role": "target-internal"},
+                )
+                logger.info("Created internal target network '%s' (internal=True)", net_name)
+                return net
+            except docker.errors.APIError:
+                return self._client.networks.get(net_name)
+
     # ─────────────────────────────────────────────────────────────────────────
     # Scanner-side HTTP proxy service (C3.3)
     # ─────────────────────────────────────────────────────────────────────────
 
-    def start_proxy(self, project_id: str, target_container_name: str) -> tuple[str, int]:
+    def start_proxy(
+        self,
+        project_id: str,
+        target_container_name: str,
+        proxy_name: str | None = None,
+        target_net_name: str | None = None,
+    ) -> tuple[str, int]:
         """
         Start a scanner-side HTTP proxy container dedicated to this target container.
 
         The proxy connects to:
           1. cs-scanner-net: publishes its port to 127.0.0.1 on the host.
-          2. cs-net-{project_id[:8]}: the target's internal=True network.
+          2. target's internal=True network (e.g. cs-net-{project_id[:8]}).
 
         Returns (proxy_container_id, host_port).
         """
-        proxy_name = self.proxy_name(project_id)
-        self._remove_container_by_name(proxy_name)
+        p_name = proxy_name or self.proxy_name(project_id)
+        self._remove_container_by_name(p_name)
 
         scanner_net = self.ensure_scanner_network()
-        target_net_name = self.target_network_name(project_id)
+        t_net_name = target_net_name or self.target_network_name(project_id)
 
         target_base = f"http://{target_container_name}:{settings.docker_target_port}"
         t0 = time.perf_counter()
         logger.info(
             "Starting scanner proxy %s forwarding to %s",
-            proxy_name,
+            p_name,
             target_base,
             extra={"event": "docker.proxy.starting"},
         )
@@ -655,7 +789,7 @@ class DockerManager:
         try:
             proxy_container = self._client.containers.run(
                 image=settings.docker_base_image,
-                name=proxy_name,
+                name=p_name,
                 command=[
                     "python", "-u", "-c", _PROXY_SCRIPT,
                     target_base,
@@ -670,7 +804,7 @@ class DockerManager:
             )
 
             # Attach proxy to the target's internal network so it can reach the target
-            target_net = self._client.networks.get(target_net_name)
+            target_net = self._client.networks.get(t_net_name)
             target_net.connect(proxy_container)
 
             # Retrieve host port assigned to 8080
@@ -680,13 +814,13 @@ class DockerManager:
             mappings = ports.get(key)
             if not mappings:
                 raise IsolationError(
-                    f"Proxy container {proxy_name} started but no host port was mapped."
+                    f"Proxy container {p_name} started but no host port was mapped."
                 )
             host_port = int(mappings[0]["HostPort"])
             elapsed = time.perf_counter() - t0
             logger.info(
                 "Proxy container %s running at 127.0.0.1:%d -> %s in %.3fs (id=%s)",
-                proxy_name,
+                p_name,
                 host_port,
                 target_base,
                 elapsed,
@@ -699,7 +833,7 @@ class DockerManager:
             elapsed = time.perf_counter() - t0
             logger.exception(
                 "Failed to start scanner proxy %s after %.3fs: %s",
-                proxy_name,
+                p_name,
                 elapsed,
                 exc,
                 extra={"event": "docker.proxy.failed"},
@@ -707,6 +841,51 @@ class DockerManager:
             raise IsolationError(
                 f"Failed to start scanner proxy for project {project_id}: {exc}"
             ) from exc
+
+    def start_patched_target(
+        self,
+        project_id: str,
+        patch_id: str,
+        image_tag: str,
+        environment: dict[str, str] | None = None,
+    ) -> tuple[str, str, int]:
+        """
+        Start a hardened patched target container and its dedicated proxy on an isolated internal network.
+        Returns (target_container_id, proxy_container_id, proxy_port).
+        """
+        net_name = self.patched_network_name(project_id, patch_id)
+        self.ensure_internal_network(net_name, project_id)
+
+        target_name = self.patched_container_name(project_id, patch_id)
+        target_id, _ = self.start_container(
+            project_id=project_id,
+            image_tag=image_tag,
+            container_name=target_name,
+            network_name=net_name,
+            environment=environment,
+        )
+
+        proxy_name = self.patched_proxy_name(project_id, patch_id)
+        proxy_id, proxy_port = self.start_proxy(
+            project_id=project_id,
+            target_container_name=target_name,
+            proxy_name=proxy_name,
+            target_net_name=net_name,
+        )
+
+        return target_id, proxy_id, proxy_port
+
+    def cleanup_patched_target(self, project_id: str, patch_id: str) -> None:
+        """Stop and tear down patched target container, proxy, network, and image."""
+        self._remove_container_by_name(self.patched_proxy_name(project_id, patch_id))
+        self._remove_container_by_name(self.patched_container_name(project_id, patch_id))
+        self._remove_network(self.patched_network_name(project_id, patch_id))
+        tag = self.patched_image_tag(project_id, patch_id)
+        try:
+            self._client.images.remove(tag, force=True)
+            logger.debug("Removed patched image '%s'", tag)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Could not remove patched image '%s': %s", tag, exc)
 
     def get_proxy_port(self, proxy_container_id_or_name: str) -> int | None:
         """Return the host port mapped to the scanner proxy's 8080/tcp port."""

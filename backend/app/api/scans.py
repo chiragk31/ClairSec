@@ -4,16 +4,24 @@ Scans API — trigger scans, list scans, check scan status, get findings.
 """
 from __future__ import annotations
 
-from datetime import datetime
+import asyncio
+from datetime import datetime, timezone
+import json
+import logging
+import secrets
 from typing import Any
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.core.auth import get_launch_token, ws_auth
 from app.core.validators import validate_project_id
 from app.database.client import get_database
-from app.database.models import ScanRecord
+from app.database.models import AgentEventRecord, ScanRecord
+from app.services.event_bus import event_bus
 from app.services.scan_service import ScanService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -67,6 +75,9 @@ class ScanSummaryResponse(BaseModel):
     fixesGenerated: int = 0
     fixes_verified: int = 0
     fixesVerified: int = 0
+    mode: str = "live"
+    llm: dict[str, Any] | None = None
+    posture: dict[str, Any] | None = None
     counters: dict[str, int] = Field(default_factory=dict)
     stage_durations: dict[str, float] = Field(default_factory=dict)
     stageDurations: dict[str, float] = Field(default_factory=dict)
@@ -120,6 +131,9 @@ class ScanSummaryResponse(BaseModel):
             fixesGenerated=fixes_gen,
             fixes_verified=fixes_ver,
             fixesVerified=fixes_ver,
+            mode=getattr(r, "mode", "live"),
+            llm=getattr(r, "llm", None),
+            posture=getattr(r, "posture", None),
             counters=cnt,
             stage_durations=durations,
             stageDurations=durations,
@@ -222,6 +236,29 @@ async def get_scan(
     return ScanDetailResponse.from_record(scan)
 
 
+@router.post(
+    "/scans/{scan_id}/cancel",
+    response_model=ScanSummaryResponse,
+    summary="Cancel an active scan pipeline",
+)
+async def cancel_scan(
+    scan_id: str,
+    service: ScanService = Depends(get_scan_service),
+) -> ScanSummaryResponse:
+    from app.services.scan_service import ScanNotCancellableError
+
+    try:
+        scan = await service.cancel_scan(scan_id)
+    except ScanNotCancellableError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    if scan is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Scan '{scan_id}' not found.",
+        )
+    return ScanSummaryResponse.from_record(scan)
+
+
 @router.get(
     "/scans/{scan_id}/findings",
     summary="Get findings for a scan in Finding model shape",
@@ -262,3 +299,156 @@ async def get_scan_patches(
             detail=f"Scan '{scan_id}' not found.",
         )
     return await service.get_scan_patches_formatted(scan_id)
+
+
+@router.get(
+    "/scans/{scan_id}/posture",
+    summary="Get security posture score and inputs (FEATURES.md F6)",
+)
+async def get_scan_posture(
+    scan_id: str,
+    service: ScanService = Depends(get_scan_service),
+) -> dict[str, Any]:
+    """Retrieve the versioned Security Posture Score (before -> after) for a scan."""
+    scan = await service.get_scan(scan_id)
+    if scan is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Scan '{scan_id}' not found.",
+        )
+    return getattr(scan, "posture", None) or {}
+
+
+@router.get(
+    "/scans/{scan_id}/surface",
+    summary="Get attack surface tree map (FEATURES.md F10)",
+)
+async def get_scan_surface(
+    scan_id: str,
+    db: AsyncIOMotorDatabase = Depends(get_database),
+) -> dict[str, Any]:
+    """Retrieve route hierarchy, worst confirmed severity, and test coverage for attack surface map."""
+    from app.services.attack_surface import get_scan_attack_surface
+    try:
+        return await get_scan_attack_surface(scan_id, db)
+    except ValueError as err:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(err),
+        )
+
+
+class AgentEventResponse(BaseModel):
+    id: str
+    scan_id: str = Field(alias="scanId")
+    seq: int
+    timestamp: str
+    agent: str
+    kind: str
+    title: str
+    detail: str = ""
+    plain: str = ""
+    severity: str | None = None
+    refs: dict[str, Any] = Field(default_factory=dict)
+    budget: dict[str, Any] | None = None
+    schema_version: int = 1
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    @classmethod
+    def from_record(cls, r: AgentEventRecord) -> "AgentEventResponse":
+        ts = r.timestamp.isoformat() if hasattr(r.timestamp, "isoformat") else str(r.timestamp)
+        return cls(
+            id=r.id,
+            scanId=r.scan_id,
+            seq=r.seq,
+            timestamp=ts,
+            agent=r.agent,
+            kind=r.kind,
+            title=r.title,
+            detail=r.detail,
+            plain=r.plain,
+            severity=r.severity,
+            refs=r.refs,
+            budget=r.budget,
+            schema_version=r.schema_version,
+        )
+
+
+@router.get(
+    "/scans/{scan_id}/events",
+    response_model=list[AgentEventResponse],
+    summary="Get events for a scan (catch-up / polling)",
+)
+async def get_scan_events(
+    scan_id: str,
+    after_seq: int = Query(default=0, ge=0),
+    limit: int = Query(default=500, ge=1, le=1000),
+) -> list[AgentEventResponse]:
+    events = await event_bus.get_events(scan_id=scan_id, after_seq=after_seq, limit=limit)
+    return [AgentEventResponse.from_record(e) for e in events]
+
+
+ws_router = APIRouter()
+
+
+@ws_router.websocket("/scans/{scan_id}/events/ws", dependencies=[Depends(ws_auth)])
+async def scan_events_websocket(
+    websocket: WebSocket,
+    scan_id: str,
+    after_seq: int = Query(default=0, ge=0),
+    auth_token: str = Depends(ws_auth),
+) -> None:
+    """
+    WebSocket event stream with mandatory C7.4 auth, catch-up and 15s heartbeat (C4, C5, C6).
+    """
+    if not getattr(websocket.state, "accepted", False):
+        subprotocol = getattr(websocket.state, "subprotocol", None)
+        await websocket.accept(subprotocol=subprotocol)
+
+    if hasattr(websocket.state, "after_seq"):
+        after_seq = websocket.state.after_seq
+
+    # 1. Subscribe FIRST so no live events are missed during catch-up (C4)
+    queue = event_bus.subscribe(scan_id)
+    last_sent_seq = after_seq
+
+    try:
+        # 2. Paged catch-up phase (no 1000 hardcap)
+        batch_size = 500
+        current_after_seq = after_seq
+        while True:
+            catch_up_batch = await event_bus.get_events(
+                scan_id=scan_id,
+                after_seq=current_after_seq,
+                limit=batch_size,
+            )
+            if not catch_up_batch:
+                break
+            for evt in catch_up_batch:
+                await websocket.send_text(AgentEventResponse.from_record(evt).model_dump_json())
+                last_sent_seq = max(last_sent_seq, evt.seq)
+                current_after_seq = evt.seq
+            if len(catch_up_batch) < batch_size:
+                break
+
+        # 3. Live subscription phase: drop live events with seq <= last_sent_seq
+        while True:
+            try:
+                event = await asyncio.wait_for(queue.get(), timeout=15.0)
+                if event.seq <= last_sent_seq:
+                    continue
+                await websocket.send_text(AgentEventResponse.from_record(event).model_dump_json())
+                last_sent_seq = max(last_sent_seq, event.seq)
+            except asyncio.TimeoutError:
+                await websocket.send_text(
+                    json.dumps({
+                        "type": "heartbeat",
+                        "timestamp": datetime.now(tz=timezone.utc).isoformat(),
+                    })
+                )
+    except (WebSocketDisconnect, Exception):
+        pass
+    finally:
+        event_bus.unsubscribe(scan_id, queue)
+

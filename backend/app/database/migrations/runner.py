@@ -7,12 +7,14 @@ import logging
 from datetime import datetime, timezone
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
-from app.database.migrations import v001_initial
+from app.database.migrations import v001_initial, v002_agent_events, v003_posture_and_origins
 
 logger = logging.getLogger(__name__)
 
 MIGRATIONS = [
     (v001_initial.MIGRATION_ID, v001_initial.upgrade),
+    (v002_agent_events.MIGRATION_ID, v002_agent_events.upgrade),
+    (v003_posture_and_origins.MIGRATION_ID, v003_posture_and_origins.upgrade),
 ]
 
 

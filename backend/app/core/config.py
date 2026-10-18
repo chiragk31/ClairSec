@@ -1,9 +1,16 @@
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     app_name: str = "Adversarial Security Platform"
     version: str = "0.1.0"
+
+    # Root directory for trusted fixtures. Computed by default from the package location.
+    trusted_fixtures_root: Path = (
+        Path(__file__).resolve().parent.parent.parent / "tests" / "fixtures"
+    ).resolve()
 
     # MongoDB — override with MONGODB_URL / MONGODB_DB environment variables.
     # Never hard-code credentials here; use a .env file or host environment.
@@ -18,12 +25,21 @@ class Settings(BaseSettings):
 
     # LLM Provider configuration per LLM.md §1
     # Default is "mock" so that the platform boots and tests without network or credentials.
-    llm_provider: str = "mock"  # "mock" | "anthropic"
+    llm_provider: str = "mock"  # "mock" | "anthropic" | "ollama"
     llm_model_id: str = "claude-opus-5"  # Exact pinned model identifier per LLM.md §1
     llm_cache_mode: str = "read_write"  # "off" | "read_write" | "replay"
 
     # LLM API key — required only when llm_provider != "mock".
     llm_api_key: str = ""
+
+    # Ollama URL and model for local AI execution per FEATURES.md F4
+    # Database fallback: when MongoDB is unreachable at startup, run on an in-memory
+    # database so Demo mode works with nothing else installed (Round 3 audit D3).
+    memory_storage_fallback: bool = True
+    mongodb_connect_timeout_ms: int = 3000
+
+    ollama_url: str = "http://127.0.0.1:11434"
+    ollama_model: str = "llama3.2"
 
     # Docker resource limits for the target container.
     # Assumption: 256 MB RAM and 0.5 CPU are reasonable defaults for a lightweight
@@ -46,6 +62,15 @@ class Settings(BaseSettings):
     # Maximum bytes captured from container stdout/stderr per retrieval.
     # 100 KB is enough for debugging without risking unbounded log accumulation.
     docker_log_max_bytes: int = 102_400
+
+    # -------------------------------------------------------------------------
+    # Phase V3: Git & GitHub import settings (FEATURES.md F2, THREAT_MODEL C2)
+    # -------------------------------------------------------------------------
+    git_allowed_hosts: list[str] = ["github.com"]
+    git_clone_timeout: int = 180
+    git_max_repo_mb: int = 200
+    git_max_files: int = 20_000
+    git_min_version: str = "2.45.1"
 
     # Name of the isolated Docker bridge network for target containers.
     docker_network_name: str = "clairsec-net"
@@ -107,7 +132,7 @@ class Settings(BaseSettings):
             missing.append("MONGODB_URL")
         if not self.workspace_root or not self.workspace_root.strip():
             missing.append("WORKSPACE_ROOT")
-        if self.llm_provider != "mock":
+        if self.llm_provider not in ("mock", "replay", "ollama"):
             if not self.llm_api_key or not self.llm_api_key.strip():
                 missing.append("LLM_API_KEY")
         if missing:

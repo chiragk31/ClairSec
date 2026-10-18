@@ -19,6 +19,8 @@ import uuid
 import httpx
 import uvicorn
 
+from app.core.config import settings
+
 logger = logging.getLogger(__name__)
 
 
@@ -75,19 +77,13 @@ class LocalFixtureTargetHandle:
     Enforces Rule R5: strictly hard-gated to backend/tests/fixtures/.
     """
 
-    ALLOWED_FIXTURE_ROOT = (
-        Path(__file__).resolve().parent.parent.parent / "tests" / "fixtures"
-    ).resolve()
-
     def __init__(self, fixture_dir: str | Path, app_module: str = "main:app"):
         resolved = Path(fixture_dir).resolve()
         # Security hard gate (Rule R5 & SECURITY.md)
-        try:
-            resolved.relative_to(self.ALLOWED_FIXTURE_ROOT)
-        except ValueError:
+        if not is_trusted_fixture_path(resolved):
             raise TargetAccessForbiddenError(
                 f"LocalFixtureTargetHandle refused path outside fixtures root: {resolved} "
-                f"(allowed root: {self.ALLOWED_FIXTURE_ROOT})"
+                f"(allowed root: {settings.trusted_fixtures_root})"
             )
 
         self._fixture_dir = resolved
@@ -301,11 +297,21 @@ def resolve_workspace_entrypoint(
     )
 
 
-class LocalWorkspaceTargetHandle:
+def is_trusted_fixture_path(path: str | Path) -> bool:
+    """Return True if the resolved path is contained within settings.trusted_fixtures_root."""
+    try:
+        resolved = Path(path).resolve()
+        fixtures_root = Path(settings.trusted_fixtures_root).resolve()
+        return resolved.is_relative_to(fixtures_root)
+    except Exception:
+        return False
+
+
+class TrustedFixtureTargetHandle:
     """
-    Target runner starting a target from modified_workspace/ (or a scan workspace)
-    with uvicorn on an ephemeral localhost port.
-    Enforces that workspace_dir is a workspace directory under a modified_workspace/ tree.
+    Target runner for trusted test fixtures (under settings.trusted_fixtures_root) with
+    uvicorn on an ephemeral localhost port.
+    Host execution of untrusted workspace code is strictly forbidden (FEATURES.md F0, C3).
     """
 
     def __init__(
@@ -313,15 +319,32 @@ class LocalWorkspaceTargetHandle:
         workspace_dir: str | Path,
         app_module: str = "main:app",
         entry_point: str | None = None,
+        *,
+        trusted_source_path: str | Path | None = None,
+        project_workspace_root: str | Path | None = None,
     ):
+        """
+        Trust is decided only from values the caller passes explicitly (D5):
+
+        - ``workspace_dir`` itself lies inside the trusted fixtures root, or
+        - ``trusted_source_path`` (taken from the project's database record) lies
+          inside the trusted fixtures root AND ``workspace_dir`` lies inside that
+          project's own platform workspace root (``project_workspace_root``).
+
+        Nothing is ever read from disk to decide trust: a marker file next to
+        repository content could be planted by the repository itself.
+        """
         resolved = Path(workspace_dir).resolve()
-        if not (
-            resolved.name == "modified_workspace"
-            or "workspaces" in resolved.parts
-            or "modified_workspace" in resolved.parts
-        ):
+        trusted = is_trusted_fixture_path(resolved)
+        if not trusted and trusted_source_path and project_workspace_root:
+            ws_root = Path(project_workspace_root).resolve()
+            if is_trusted_fixture_path(trusted_source_path) and resolved.is_relative_to(ws_root):
+                trusted = True
+
+        if not trusted:
             raise TargetAccessForbiddenError(
-                f"LocalWorkspaceTargetHandle refused non-workspace path: {resolved}"
+                f"TrustedFixtureTargetHandle refused non-fixture path: {resolved}. "
+                f"Host execution is only permitted for test fixtures under {settings.trusted_fixtures_root}."
             )
 
         self._workspace_dir = resolved
@@ -334,7 +357,7 @@ class LocalWorkspaceTargetHandle:
     @property
     def port(self) -> int:
         if self._port is None:
-            raise RuntimeError("LocalWorkspaceTargetHandle has not been started yet.")
+            raise RuntimeError("TrustedFixtureTargetHandle has not been started yet.")
         return self._port
 
     @property
@@ -438,3 +461,4 @@ class LocalWorkspaceTargetHandle:
             self._server_task = None
         self._server = None
         self._port = None
+

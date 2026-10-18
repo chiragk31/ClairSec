@@ -47,6 +47,11 @@ class TestCaseRecord(BaseModel):
         }
     )
     executed_at: str = Field(default_factory=_now_iso)
+    # "attack" for tests the Attacker ran; "replay" for a user-triggered re-run (F8).
+    # Replays are new append-only records and never overwrite the original.
+    kind: str = "attack"
+    replay_of: str | None = None
+    replay_target: str | None = None  # "original" | "patched"
 
 
 class CandidateFinding(BaseModel):

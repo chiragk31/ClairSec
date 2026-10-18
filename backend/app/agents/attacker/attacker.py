@@ -98,6 +98,7 @@ class AttackerAgent:
         *,
         rate_limit_rps: float = 20.0,
         max_requests: int = 100,
+        emitter: Any = None,
     ):
         self._provider = llm_provider or MockLLMProvider()
         self._ledger = ledger or LLMCallLedger()
@@ -105,6 +106,51 @@ class AttackerAgent:
         self._finding_repo = finding_repo or FindingRepository()
         self._rate_limit_rps = rate_limit_rps
         self._max_requests = max_requests
+        self._emitter = emitter
+
+    async def _emit(
+        self,
+        scan_id: str,
+        kind: str,
+        title: str,
+        detail: str = "",
+        refs: dict[str, Any] | None = None,
+    ) -> None:
+        if self._emitter:
+            try:
+                await self._emitter(scan_id, "attacker", kind, title, detail=detail, refs=refs)
+            except Exception:
+                pass
+
+    async def _record_and_emit(
+        self,
+        scan_id: str,
+        test_case: TestCaseRecord,
+        all_tests: list[TestCaseRecord],
+        finding: CandidateFinding | None = None,
+        candidate_findings: list[CandidateFinding] | None = None,
+    ) -> None:
+        await self._test_case_repo.save(test_case)
+        all_tests.append(test_case)
+        if finding is not None and candidate_findings is not None:
+            await self._finding_repo.save(finding)
+            candidate_findings.append(finding)
+
+        tc_cat = getattr(test_case, "category", "TEST")
+        tc_route = getattr(test_case, "route_template", "")
+        tc_method = getattr(test_case, "method", "GET")
+        tc_id = getattr(test_case, "id", None)
+        await self._emit(scan_id, "test_planned", f"{tc_cat} on {tc_route}", refs={"test_case_id": tc_id})
+        await self._emit(scan_id, "request_sent", f"{tc_method} {tc_route}", refs={"test_case_id": tc_id})
+        oracle_res = getattr(test_case, "oracle_result", {}) or {}
+        fired = oracle_res.get("fired", False) if isinstance(oracle_res, dict) else getattr(oracle_res, "fired", False)
+        rule_id = oracle_res.get("rule_id", "CHECK") if isinstance(oracle_res, dict) else getattr(oracle_res, "rule_id", "CHECK")
+        rationale = oracle_res.get("rationale", "") if isinstance(oracle_res, dict) else getattr(oracle_res, "rationale", "")
+        oracle_kind = "oracle_fired" if fired else "oracle_clear"
+        oracle_title = f"Oracle {rule_id}: {rationale}" if fired else f"Oracle {rule_id} clear"
+        await self._emit(scan_id, oracle_kind, oracle_title, refs={"test_case_id": tc_id})
+        if finding is not None:
+            await self._emit(scan_id, "finding_candidate", getattr(finding, "title", "Candidate finding"), refs={"finding_id": getattr(finding, "id", None)})
 
     async def _record_policy_skip(
         self,
@@ -223,6 +269,7 @@ class AttackerAgent:
         context: AgentContext,
         target_handle: TargetHandle,
         replay_mode: bool = False,
+        cancellation_token: asyncio.Event | None = None,
     ) -> AttackerScanResult:
         """
         Execute security test suite against the target and emit test cases and candidate findings.
@@ -268,6 +315,9 @@ class AttackerAgent:
             ]
 
             for route in bola_routes:
+                if cancellation_token and cancellation_token.is_set():
+                    logger.info("AttackerAgent stopped: cancellation requested")
+                    break
                 norm_template = route.route_template
                 method = route.method if route.method in ("GET", "HEAD") else "GET"
                 # Target path: Alice requests Bob's document / object
@@ -348,9 +398,7 @@ class AttackerAgent:
                     oracle_result=oracle_res.model_dump(),
                     status="executed",
                 )
-                await self._test_case_repo.save(test_case)
-                all_tests.append(test_case)
-
+                finding = None
                 if oracle_res.fired:
                     finding = CandidateFinding(
                         scan_id=context.scan_id,
@@ -382,8 +430,14 @@ class AttackerAgent:
                         ] if route.source_file else [],
                         status="candidate",
                     )
-                    await self._finding_repo.save(finding)
-                    candidate_findings.append(finding)
+
+                await self._record_and_emit(
+                    scan_id=context.scan_id,
+                    test_case=test_case,
+                    all_tests=all_tests,
+                    finding=finding,
+                    candidate_findings=candidate_findings,
+                )
 
             # ─────────────────────────────────────────────────────────────────
             # Category 2: BOPLA_MASS_ASSIGN (Mass Assignment / CWE-915)
@@ -395,6 +449,9 @@ class AttackerAgent:
             ]
 
             for route in mass_assign_routes:
+                if cancellation_token and cancellation_token.is_set():
+                    logger.info("AttackerAgent stopped: cancellation requested")
+                    break
                 norm_template = route.route_template
                 method = route.method
                 # Target path: Alice updates her profile injecting privileged fields
@@ -495,9 +552,7 @@ class AttackerAgent:
                     oracle_result=oracle_res.model_dump(),
                     status="executed",
                 )
-                await self._test_case_repo.save(test_case)
-                all_tests.append(test_case)
-
+                finding = None
                 if oracle_res.fired:
                     finding = CandidateFinding(
                         scan_id=context.scan_id,
@@ -529,8 +584,14 @@ class AttackerAgent:
                         ] if route.source_file else [],
                         status="candidate",
                     )
-                    await self._finding_repo.save(finding)
-                    candidate_findings.append(finding)
+
+                await self._record_and_emit(
+                    scan_id=context.scan_id,
+                    test_case=test_case,
+                    all_tests=all_tests,
+                    finding=finding,
+                    candidate_findings=candidate_findings,
+                )
 
             # ─────────────────────────────────────────────────────────────────
             # Category 3: SECURITY_MISCONFIG (Security Misconfiguration / CWE-16)
@@ -548,6 +609,9 @@ class AttackerAgent:
                 misconfig_targets.append(("/debug/config", "GET", None))
 
             for endpoint_path, method, route_item in misconfig_targets:
+                if cancellation_token and cancellation_token.is_set():
+                    logger.info("AttackerAgent stopped: cancellation requested")
+                    break
                 norm_template = normalize_route_path(endpoint_path, known_templates)
                 req_headers = {"Origin": "http://evil.example.com"}
 
@@ -625,9 +689,7 @@ class AttackerAgent:
                     oracle_result=oracle_res.model_dump(),
                     status="executed",
                 )
-                await self._test_case_repo.save(test_case)
-                all_tests.append(test_case)
-
+                finding = None
                 if oracle_res.fired:
                     finding = CandidateFinding(
                         scan_id=context.scan_id,
@@ -658,8 +720,14 @@ class AttackerAgent:
                         ] if route_item and route_item.source_file else [],
                         status="candidate",
                     )
-                    await self._finding_repo.save(finding)
-                    candidate_findings.append(finding)
+
+                await self._record_and_emit(
+                    scan_id=context.scan_id,
+                    test_case=test_case,
+                    all_tests=all_tests,
+                    finding=finding,
+                    candidate_findings=candidate_findings,
+                )
 
             # Probe CORS on root / if no misconfig candidate was emitted yet
             if not any(f.category == SecurityMisconfigOracle.CATEGORY for f in candidate_findings):
@@ -698,9 +766,7 @@ class AttackerAgent:
                         oracle_result=oracle_res.model_dump(),
                         status="executed",
                     )
-                    await self._test_case_repo.save(test_case)
-                    all_tests.append(test_case)
-
+                    finding = None
                     if oracle_res.fired:
                         finding = CandidateFinding(
                             scan_id=context.scan_id,
@@ -719,8 +785,14 @@ class AttackerAgent:
                             source_locations=[],
                             status="candidate",
                         )
-                        await self._finding_repo.save(finding)
-                        candidate_findings.append(finding)
+
+                    await self._record_and_emit(
+                        scan_id=context.scan_id,
+                        test_case=test_case,
+                        all_tests=all_tests,
+                        finding=finding,
+                        candidate_findings=candidate_findings,
+                    )
                 except NonDestructivePolicyViolationError as exc:
                     await self._record_policy_skip(
                         scan_id=context.scan_id,
@@ -757,6 +829,9 @@ class AttackerAgent:
                 and r.method in ("GET", "POST", "PUT", "DELETE")
             ]
             for route in bfla_routes:
+                if cancellation_token and cancellation_token.is_set():
+                    logger.info("AttackerAgent stopped: cancellation requested")
+                    break
                 norm_template = route.route_template
                 method = route.method
                 target_path = resolve_path_template(norm_template, principal_id=alice.user_id, default_id="1")
@@ -836,9 +911,7 @@ class AttackerAgent:
                     oracle_result=oracle_res.model_dump(),
                     status="executed",
                 )
-                await self._test_case_repo.save(test_case)
-                all_tests.append(test_case)
-
+                finding = None
                 if oracle_res.fired:
                     finding = CandidateFinding(
                         scan_id=context.scan_id,
@@ -864,8 +937,14 @@ class AttackerAgent:
                         ] if route.source_file else [],
                         status="candidate",
                     )
-                    await self._finding_repo.save(finding)
-                    candidate_findings.append(finding)
+
+                await self._record_and_emit(
+                    scan_id=context.scan_id,
+                    test_case=test_case,
+                    all_tests=all_tests,
+                    finding=finding,
+                    candidate_findings=candidate_findings,
+                )
 
             # ─────────────────────────────────────────────────────────────────
             # Category 5: PATH_TRAVERSAL (Path Traversal / CWE-22)
@@ -892,6 +971,9 @@ class AttackerAgent:
                 )
 
             for route in traversal_routes:
+                if cancellation_token and cancellation_token.is_set():
+                    logger.info("AttackerAgent stopped: cancellation requested")
+                    break
                 norm_template = route.route_template
                 method = route.method
 
@@ -978,9 +1060,7 @@ class AttackerAgent:
                     oracle_result=oracle_res.model_dump(),
                     status="executed",
                 )
-                await self._test_case_repo.save(test_case)
-                all_tests.append(test_case)
-
+                finding = None
                 if oracle_res.fired:
                     finding = CandidateFinding(
                         scan_id=context.scan_id,
@@ -1006,8 +1086,14 @@ class AttackerAgent:
                         ] if route.source_file else [],
                         status="candidate",
                     )
-                    await self._finding_repo.save(finding)
-                    candidate_findings.append(finding)
+
+                await self._record_and_emit(
+                    scan_id=context.scan_id,
+                    test_case=test_case,
+                    all_tests=all_tests,
+                    finding=finding,
+                    candidate_findings=candidate_findings,
+                )
 
             # ─────────────────────────────────────────────────────────────────
             # Category 6: SQL_INJECTION (SQL Injection / CWE-89)
@@ -1017,6 +1103,8 @@ class AttackerAgent:
                 if r.method == "GET" and any(kw in r.route_template.lower() for kw in ("search", "find", "query", "filter"))
             ]
             for route in sqli_routes:
+                if cancellation_token and cancellation_token.is_set():
+                    raise asyncio.CancelledError("Attacker execution cancelled")
                 norm_template = route.route_template
                 method = route.method
                 base_path = resolve_path_template(norm_template, default_id="1")
@@ -1096,8 +1184,6 @@ class AttackerAgent:
                     oracle_result=oracle_res.model_dump(),
                     status="executed",
                 )
-                await self._test_case_repo.save(test_case)
-                all_tests.append(test_case)
 
                 if oracle_res.fired:
                     finding = CandidateFinding(
@@ -1123,8 +1209,16 @@ class AttackerAgent:
                         ] if route.source_file else [],
                         status="candidate",
                     )
-                    await self._finding_repo.save(finding)
-                    candidate_findings.append(finding)
+                else:
+                    finding = None
+
+                await self._record_and_emit(
+                    scan_id=context.scan_id,
+                    test_case=test_case,
+                    all_tests=all_tests,
+                    finding=finding,
+                    candidate_findings=candidate_findings,
+                )
 
         executed_tests = [tc for tc in all_tests if tc.status == "executed"]
         skipped_policy_tests = [tc for tc in all_tests if tc.status == "skipped_policy"]

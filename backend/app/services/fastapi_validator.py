@@ -180,7 +180,7 @@ def _find_fastapi_entry(root: Path, errors: list[str]) -> str | None:
 
             source = py_file.read_text(encoding="utf-8", errors="replace")
             scanned += 1
-            rel_candidate = str(py_file.relative_to(root))
+            rel_candidate = py_file.relative_to(root).as_posix()
             scanned_candidates.append(rel_candidate)
 
             if _ast_has_fastapi_instance(source):
@@ -269,7 +269,7 @@ def _parse_dependencies(
         if candidate.is_dir() and not candidate.name.startswith("."):
             nested_req = candidate / "requirements.txt"
             if nested_req.exists():
-                rel = str(nested_req.relative_to(root))
+                rel = nested_req.relative_to(root).as_posix()
                 deps = _parse_requirements_txt(nested_req, errors)
                 logger.info(
                     "Found nested dependency file '%s' with %d package(s)",

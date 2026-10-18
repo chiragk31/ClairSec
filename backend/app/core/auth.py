@@ -16,13 +16,14 @@ pywin32 if available; otherwise we document this as a residual risk.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import secrets
 import sys
 from pathlib import Path
 
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, HTTPException, Request, WebSocket, WebSocketException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.config import settings
@@ -117,32 +118,88 @@ def _restrict_file_permissions(path: Path) -> None:
         os.chmod(path, 0o600)
 
 
+from starlette.requests import HTTPConnection
+
+
 async def verify_token(
-    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+    conn: HTTPConnection,
 ) -> str:
     """
     FastAPI dependency that verifies the per-launch bearer token.
 
-    Returns the token on success, raises 401 on failure.
-    Used as a global dependency on the app.
+    Returns the token on success, raises 401 on failure for HTTP requests.
+    WebSocket endpoints use explicit ws_auth dependency (C6, C7.4).
     """
-    if credentials is None:
+    auth_header = conn.headers.get("authorization")
+    if not auth_header or not auth_header.lower().startswith("bearer "):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing authentication token.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    token = get_launch_token()
+    token = auth_header[7:].strip()
+    launch_token = get_launch_token()
     # Constant-time comparison to prevent timing attacks
-    if not secrets.compare_digest(credentials.credentials, token):
+    if not secrets.compare_digest(token, launch_token):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authentication token.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    return credentials.credentials
+    return token
+
+
+async def ws_auth(websocket: WebSocket) -> str:
+    """
+    FastAPI dependency that enforces WebSocket per-launch authentication (C5, C6, C7.4).
+    Rejects query param tokens (do not log them).
+    Accepts Sec-WebSocket-Protocol or first JSON auth message.
+    """
+    if "token" in websocket.query_params:
+        logger.warning("Rejected WebSocket connection: auth token in query param is prohibited (C5)")
+        # Note: Do NOT log the token value
+        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION, reason="Query param token prohibited")
+
+    launch_token = get_launch_token()
+
+    # 1. Check Sec-WebSocket-Protocol header
+    subprotocol_header = websocket.headers.get("sec-websocket-protocol")
+    if subprotocol_header:
+        parts = [p.strip() for p in subprotocol_header.split(",")]
+        token_candidate = None
+        selected_subprotocol = None
+        if len(parts) == 2 and parts[0].lower() == "bearer":
+            token_candidate = parts[1]
+            selected_subprotocol = parts[0]
+        elif len(parts) == 1:
+            token_candidate = parts[0]
+            selected_subprotocol = parts[0]
+
+        if token_candidate and secrets.compare_digest(token_candidate, launch_token):
+            websocket.state.subprotocol = selected_subprotocol
+            return token_candidate
+
+        logger.warning("WebSocket handshake rejected: invalid Sec-WebSocket-Protocol token")
+        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION, reason="Unauthorized")
+
+    # 2. Accept and await first JSON auth message
+    await websocket.accept()
+    websocket.state.accepted = True
+    try:
+        msg = await asyncio.wait_for(websocket.receive_json(), timeout=5.0)
+        if isinstance(msg, dict) and msg.get("type") == "auth":
+            client_tok = msg.get("token", "")
+            if client_tok and secrets.compare_digest(client_tok, launch_token):
+                if "after_seq" in msg:
+                    websocket.state.after_seq = int(msg["after_seq"])
+                return client_tok
+    except Exception:
+        pass
+
+    logger.warning("WebSocket handshake rejected: unauthorized first message")
+    raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION, reason="Unauthorized")
 
 
 def validate_host_header(request: Request) -> None:

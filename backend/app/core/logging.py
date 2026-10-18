@@ -334,6 +334,17 @@ def setup_logging(log_level: int = logging.INFO) -> None:
     root_logger = logging.getLogger()
     app_logger = logging.getLogger("app")
 
+    # Windows consoles and redirected output default to cp1252, which cannot encode
+    # characters such as "→" used in log messages; every such record then raised
+    # "--- Logging error ---". Never let encoding break logging: replace instead.
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            try:
+                reconfigure(errors="replace")
+            except (ValueError, OSError):
+                pass
+
     # If root logger has existing StreamHandlers (e.g. from uvicorn or basicConfig),
     # update their formatter and add the ClairSec filter.
     formatter = ClairSecTerminalFormatter()
