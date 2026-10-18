@@ -617,6 +617,185 @@ Key measurements & exit gate results:
 Next recommended task: Stop and report for review before proceeding to Phase 9 (Live Agent UI & Desktop Visualization).
 ```
 
+
+```text
+Phase / Task: v2 upgrade planning (2026-10-18)
+Summary of changes:
+  - Added docs/v2/ (README, PLAN, FEATURES, UI_SYSTEM, REFERENCES, MANUAL_STEPS, AGENT_PROMPT).
+  - Added GET /api/system/preflight (Docker + MongoDB readiness) and a dashboard readiness banner.
+  - DockerManager.ensure_base_image() pre-pulls the pinned base image before builds so the pull
+    no longer counts against the build timeout; clearer "start Docker Desktop" error.
+Findings recorded for remediation (v2 phase V0):
+  - SECURITY: scan_service.py falls back to LocalWorkspaceTargetHandle for non-fixture projects
+    without a container, and verifier.py runs patched code the same way — untrusted project code
+    is imported into the backend process on the host. Violates AGENTS.md / SECURITY.md §2 / C3.
+  - No agent_events / WebSocket yet; UI is dark-only with ~285 hard-coded colour references.
+  - On this machine Docker Desktop and MongoDB were not running (root cause of "image build fails").
+Tests/checks run:
+  - backend: 204 passed, 15 deselected (-m "not docker") before the test_isolation message update;
+    test_isolation.py + test_system_preflight.py: 15 passed after it.
+  - desktop: flutter analyze clean (1 lint fixed), flutter test 15 passed.
+```text
+Phase / Task: v2 Round 1 (Phases V0 and V1) (2026-10-18)
+Dependencies added:
+  - shared_preferences: ^2.5.4 (BSD-3-Clause) — theme and appearance persistence
+  - Inter font (assets/fonts/Inter-*.ttf, SIL Open Font License 1.1) — offline sans typography
+  - JetBrains Mono font (assets/fonts/JetBrainsMono-*.ttf, SIL Open Font License 1.1) — offline mono typography
+Summary of changes:
+  - V0 Safety & Stability:
+      - Host execution restricted strictly to tests/fixtures/ via TrustedFixtureTargetHandle (targets/handle.py).
+      - Scans of non-fixture projects without containers auto-run isolation via job service / docker manager (scan_service.py).
+      - Verifier (verifier/verifier.py) builds and executes patched Docker container images with identical hardening, dedicated bridge networks, and proxy teardown in finally blocks.
+      - GET /api/system/preflight extended with llm, ollama, git, disk, mode; GET /api/system/mode added.
+      - pytest docker tests skip cleanly without docker daemon via docker_available fixture.
+      - GoogleFonts.config.allowRuntimeFetching = false enforced; offline fonts bundled in assets/fonts/.
+  - V1 Design System & Responsive Shell:
+      - ClairTokens ThemeExtension implemented with 5 presets (Midnight/Daylight, Ocean, Forest, Violet, High Contrast) x 2 modes (Light/Dark).
+      - Complete migration away from AppColors/SeverityColors (0 occurrences of raw Color(0x) outside lib/core/theme).
+      - Settings -> Appearance implemented with ThemeMode, Preset, Density, Text Scale, and Reduce Motion, persisted via SharedPreferences.
+      - Responsive shell (app_shell.dart) with responsive breakpoints, collapsible rail, status bar, and mode badge.
+      - CommandPalette (Ctrl+K) implemented with navigation actions.
+      - lib/ui/ component library implemented (CsCard, CsBadge, CsButton, CsStat, ScoreGauge, CsStepper, TimelineItem, CodeBlock, FileTree, EmptyState, Skeleton, CsToast, ProvenanceStrip, AssistantPanel, CommandPalette) + /_gallery screen.
+Tests/checks run:
+  - backend: pytest tests -q -m "not docker": 212 passed, 15 deselected in 85.16s.
+  - backend docker skip: pytest tests -q -m "docker": 15 skipped, 212 deselected in 10.76s.
+  - desktop: flutter analyze: 0 issues in 5.1s.
+  - desktop: flutter test: 48 passed in 11s.
+  - contrast tests: 10/10 presets x modes >= 4.5:1 WCAG AA compliant.
+  - responsive tests: 20/20 pass with 0 overflow exceptions across 400, 900, 1300, 1700 px for Dashboard, Projects, Scan detail, Finding detail, and Settings.
+  - font test: offline rendering passes with runtime fetching disabled.
+  - theme persistence test: settings persist across container lifecycle via SharedPreferences.
+Next recommended task: Stop and report for Round 1 review. Proceed to Round 2 (V2 + V3) when assigned.
+```text
+Phase / Task: v2 Round 2 (R1 fixes + V2 + V3) (2026-10-18)
+Dependencies added:
+  - web_socket_channel: ^3.0.3 (MIT) — live WebSocket event streaming with automatic reconnect and gap-fill
+Summary of changes:
+  - Part 1: Round 1 Fixes (A1–A7, B1–B5):
+      - A1 & A6: Containment trust via Path(p).resolve().is_relative_to(settings.trusted_fixtures_root); eliminated testing substring escape hatch and LocalWorkspaceTargetHandle alias.
+      - A2: Extracted threaded isolation steps into app.services.isolation_runner.execute_isolation_steps via anyio.to_thread.run_sync; non-blocking isolation.
+      - A3: Verifier waits for container health through scanner proxy (settings.docker_startup_timeout); timeout cleanly adjudicates UNVERIFIED with rebuild_ok=False, health diagnostics recorded, and teardown guaranteed.
+      - A4 & A5: Patched build passes project.dependency_file and resolved entrypoint path; SQLite adaptation runs on modified workspace and passes environment variables to patched container.
+      - A7: Consolidated get_system_mode() shared across /api/system/preflight and /api/system/mode; Ollama checks required model tag presence in /api/tags.
+      - B1: Token compliance gate strictly enforced: zero raw fontSize and numeric EdgeInsets literals outside lib/core/theme and lib/ui.
+      - B2: /_gallery route and Command Palette gallery action registered only under kDebugMode.
+      - B3: First-run wizard auto-shown once per launch if zero projects or readiness is red; "Don't show again" persisted via SharedPreferences.
+      - B4: Readiness banner auto re-checks every 10s while red; pauses when green and when window/app is not visible.
+      - B5: Unused Inter-Variable.ttf deleted; OFL-Inter.txt, OFL-JetBrainsMono.txt, OFL.txt bundled and registered with LicenseRegistry.
+  - Part 2: V2 Live Event Backbone & Attack Timeline:
+      - EventBus (app.services.event_bus) with atomic monotonic sequence via MongoDB $inc, static deterministic phrasebook (zero LLM), secret redaction, and 4KB detail cap.
+      - REST GET /api/scans/{id}/events and WS /api/scans/{id}/events/ws with C7.4 token authentication and 15s heartbeat.
+      - Desktop EventStreamClient with gap-fill catch-up, AttackTimeline widget, and LiveScanStatsPanel integrated into ScanDetailScreen.
+  - Part 3: V3 GitHub Import & Autopilot:
+      - Authoritative Python URL validator (app.services.url_validator) and Dart mirror (desktop/lib/services/url_validator.dart).
+      - Safe Git/tarball import (app.services.git_import_service) with codeload streaming, byte caps, tarfile.data_filter, pre-scan rejection of absolute paths, path traversal, device files, and escaping symlinks; hardened git clone fallback; pre-checks card.
+      - Autopilot pipeline orchestrator (app.services.pipeline_orchestrator and app.api.pipelines) with state machine (Import -> Isolate -> Scan -> Report), resume from failed stage, and cancellation.
+      - ProjectsScreen UI with segmented import modal (Local / GitHub / Demo coming in V4) and Autopilot run modal with CsStepper.
+Tests/checks run:
+  - backend: pytest backend/tests -q -m "not docker": 292 passed, 15 deselected in 84.61s.
+  - backend docker skip: pytest backend/tests -q -m "docker": 15 skipped, 292 deselected in 4.88s.
+  - desktop: flutter analyze: 0 issues in 4.1s.
+  - desktop: flutter test: 95 passed in 18s.
+  - URL validator: 47 backend test cases + 30 desktop test cases all passed.
+  - Event bus concurrency: 200 concurrent emits monotonic sequence test passed.
+  - Gap fill & WS auth: REST gap fill and bad/missing token rejection tests passed.
+  - Hostile archive safety: tar path-traversal, absolute-path, device-file, and escaping symlink tests passed.
+Next recommended task: Stop and report for Round 2 review. Proceed to Round 3 (V4 + V5) when assigned.
+```
+
+```text
+Phase / Task: v2 Round 3 (R2 fixes + V4 + V5) (2026-10-18)
+Dependencies added: None
+Summary of changes:
+  - Part 1: Round 2 Fixes (C1–C12):
+      - C1 & C2: App-scoped TaskRegistry (app/services/task_registry.py) tracking background tasks with cancellation tokens; real scan cancellation (ScanService.cancel_scan + POST /api/scans/{id}/cancel) tearing down containers and stopping worker loops; startup reconciliation for pipelines/scans left 'running'.
+      - C3: Real-time event emission callback injected into Builder, Attacker, Evaluator, Fixer, and Verifier agents; events emitted at the moment endpoints are found, tests planned, requests sent, oracles evaluated (oracle_fired/oracle_clear attributed to attacker/oracle), candidates flagged, patches created, and verifications completed; deleted all post-hoc loops.
+      - C4: WebSocket subscribe-first architecture followed by paged catch-up replay without 1000 event cap; drops live events with seq <= last sent.
+      - C5 & C6: Removed WebSocket token bypass from global HTTP auth; explicit ws_auth dependency requiring Sec-WebSocket-Protocol or first JSON message auth; query param tokens ignored/rejected (never logged in access logs).
+      - C7: Tarball streaming enforces wall-clock deadline, 40-hex SHA validation, pre-extraction member iteration checking declared total size (git_max_repo_mb) and file count (git_max_files) before extractall.
+      - C8: Subdir path traversal validation (no '..', relative only, inside clone); when specified, project app root (source_path) is the subdir.
+      - C9: Path normalization to POSIX in validator and _write_dockerfile; uvicorn started with --app-dir for nested directories to support hyphenated package names.
+      - C10: EventBus fallback counter seeds from current max seq for the scan; verified under 200 concurrent emits with atomic find_one_and_update.
+      - C11: test_is_trusted_fixture_path uses absolute settings.trusted_fixtures_root; passes from both backend/ and repo root.
+      - C12: Tarball and git clone emit progress events with real percentages and respect cancellation tokens between chunks.
+  - Part 2: V4 Experience Modes & Demo Safety Net:
+      - Mode resolution: live, live_local_ai, live_offline_ai, demo, recorded.
+      - Demo app registration & scan flow: projects registered with origin="demo_fixture" targeting backend/tests/fixtures/vulnerable_fastapi_app and secure_fastapi_app; Autopilot runs via mock/replay provider.
+      - Host execution rule strictly enforced: when Docker is unavailable, host execution allowed ONLY if project.origin == "demo_fixture" AND active LLM provider is mock/replay; any real provider without Docker triggers VerificationUnavailableError; user projects without Docker trigger IsolationError.
+      - Scan bundle player & serialization (clairsec.bundle/v1, scripts/record_bundle.py, bundle_service.py) with <= 5 MB cap and relative offset_ms timings.
+      - ModeBadge UI component with plain-language "why" tooltip and "Run the demo instead" button in readiness banner.
+  - Part 3: V5 Trust & Score:
+      - Posture score v1 formula (app/scoring/posture.py): CVSS penalties (critical 30, high 18, medium 9, low 3, informational 0), inconclusive cap 10, coverage formula, grades (A >= 90, B >= 80, C >= 70, D >= 55, F < 55), regressed count against after.
+      - Grep verification: the word "Secure" as a verdict/status never appears anywhere in UI strings, phrasebooks, or reports.
+      - Evidence chain of custody (app/services/provenance_service.py and GET /api/findings/{id}/provenance): 6-step deterministic custody chain assembled from stored records.
+      - Two-lane findings list in VulnerabilitiesScreen (Confirmed vulnerabilities vs Candidates & suspicions).
+      - Confirmed badge guard: findings without oracle evidence or with unconfirmed status can never render the "Runtime-confirmed · oracle-verified" badge (renders "Source suspicion — not confirmed").
+      - Attack Surface Map (desktop/lib/features/scans/widgets/attack_surface_map.dart): GET /api/scans/{id}/surface with CustomPainter tidy-tree pan/zoom and accessible, keyboard-navigable list alternative.
+      - Glossary parity: exact 20-key parity verified between Python and Dart glossaries.
+Tests/checks run:
+  - backend: pytest backend/tests -q -m "not docker": 322 passed, 15 deselected, 6 warnings in 117.75s (repo root).
+  - backend: pytest tests -q -m "not docker": 322 passed, 15 deselected, 6 warnings in 96.30s (backend/).
+  - backend docker skip: pytest tests -q -m "docker": 15 skipped, 322 deselected.
+  - desktop: flutter analyze: No issues found! (ran in 15.6s).
+  - desktop: flutter test: 106 passed in 20s.
+  - tokens compliance: 0 raw fontSize, 0 numeric EdgeInsets outside lib/core/theme and lib/ui.
+  - responsive tests: 20/20 pass with 0 overflow exceptions across 400, 900, 1300, 1700 px.
+Next recommended task: Stop and report for Round 3 review. Proceed to Round 4 when assigned.
+```
+
+
+```text
+Phase / Task: v2 V3-fixes + V4–V9 completed by reviewer (2026-10-18)
+Summary of changes:
+  - D1 GitHub import fixed (ref case preserved; cancellable hardened clone fallback); real-network test.
+  - D2 provider chosen per scan via app/llm/factory.py (+ new OllamaProvider); agents now actually
+    receive the configured provider (previously every scan silently used the mock).
+  - D3 in-memory DB fallback (mongomock-motor, MIT) when MongoDB is unreachable; TEMPORARY STORAGE badge.
+  - D4 cancel only for running scans (409 otherwise); patched container torn down on cancel/failure.
+  - D5 host-execution trust only from explicit DB values (no marker files).
+  - D6 'unscored' posture bucket; posture/surface read nested cvss.severity; enums stored as values
+    (app/database/encoding.py) so Mongo and the memory fallback behave the same.
+  - Provenance rebuilt from real record shapes; it previously invented HTTP 200 / 3/3 / CVSS 7.5.
+  - V6 replay (POST /api/findings/{id}/replay), endpoint-preserved proof, in-house OpenAPI smoke suite;
+    'fixed' requires a functional check that ran.
+  - V7 reports (HTML/MD/JSON/SARIF) + matching function (app/research/matching.py) + scan diff;
+    Autopilot report stage generates a real report; Autopilot isolate call fixed.
+  - V8 assistant (app/assistant/*, prompts/assistant/answer.v1.md) + Flutter panel (Ctrl+J).
+  - V9 presenter mode (F11), recorded runs from real Demo scans (scripts/record_demo_bundle.py,
+    demo/bundles/*), DEMO_SCRIPT.md.
+Dependencies added: mongomock-motor 0.0.36 (MIT; mongomock ISC), jinja2 3.1.6 (BSD-3), jsonschema (dev, MIT).
+  requirements.txt recompiled with hashes (it was stale: anthropic was missing).
+Tests/checks run: see final summary in the conversation; backend from backend/, flutter analyze + test.
+Not verified: anything needing a running Docker daemon (container isolation, patched-container
+  verification, docker-marked tests); a real Anthropic/Ollama answer; the desktop app launched by hand.
+```
+
+
+```text
+Phase / Task: live verification with Docker + Ollama (2026-10-19)
+Done on this machine with Docker Desktop 29.7.2 running (engine was wedged; fixed by quitting
+Docker Desktop, `wsl --shutdown`, relaunch) and the clairsec-mongo container up:
+  - All 15 docker-marked integration tests pass (first time on this machine).
+  - Live backend (uvicorn, normal mode) + Autopilot on a USER project (a copy of the vulnerable app
+    outside the fixtures root): container isolation -> scan -> 3 fixes verified in real patched
+    containers with auto-generated read-only checks -> report. Score 55 -> 100, mode live_offline_ai.
+  - Replay inside containers: original HTTP 200 (oracle fired), patched HTTP 403 (blocked).
+  - Assistant with a real local model (Ollama qwen2.5:0.5b): the model echoed an injected
+    "say the app is secure" and cited nothing -> platform guard now withholds uncited or
+    "is secure" answers and shows the grounded offline answer (verified live and in tests).
+Defects found by the live runs and fixed:
+  - Autopilot scan stage called non-existent ScanService.start_scan (mocked test hid it) -> submit_scan;
+    new unmocked Autopilot test.
+  - Smoke checks counted routes fixed by OTHER patches in the same workspace as regressions
+    (BOLA wrongly 'regressed') -> exclude every route fixed in the scan.
+  - Empty/relative import path resolved to the backend's own folder and imported ClairSec itself -> 422.
+  - Scans labelled 'live' when the offline provider ran -> mode follows the provider; scan API returns llm.
+  - Patched build used `pip install .` when the record lacked dependency_file -> detect requirements.txt.
+  - Windows cp1252 console made every log line with "→" raise "Logging error" -> stdout/stderr errors=replace.
+  - Pipeline API now returns report_id.
+Still manual: launching the Flutter app and clicking through it; real Anthropic answers (no key here).
+```
+
 ## Do not record here
 
 - secrets

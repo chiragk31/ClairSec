@@ -28,6 +28,9 @@ the documents above only state as goals, and they are binding where they apply:
 
 `docs/` is the project instruction source of truth.
 
+**Active work: the v2 upgrade in `docs/v2/`.** Read `docs/v2/README.md` after the list
+above and work only on the round you were assigned (`docs/v2/AGENT_PROMPT.md`).
+
 Work incrementally according to `docs/PHASES.md`. Phases 0–3 are implemented;
 **Phase 3.5 is remediation work that must land before Phase 4.**
 

@@ -37,6 +37,13 @@ When a document in 1–9 states a goal and a document in 10–16 states the mech
 the mechanism is binding — that is what those documents are for. Where they appear to
 conflict on substance rather than detail, raise it rather than choosing silently.
 
+## v2 upgrade (active work, 2026-10-18 →)
+
+`docs/v2/` contains the v2 upgrade pack: phased plan (`PLAN.md`), feature specs
+(`FEATURES.md`), UI system (`UI_SYSTEM.md`), prior-art research (`REFERENCES.md`),
+manual steps and the coding-agent prompt. Work in rounds as `docs/v2/PLAN.md` describes.
+The base documents above still outrank `docs/v2/`.
+
 ## Agent operating principle
 
 Do not attempt to build the entire product in one step.

@@ -1,0 +1,1739 @@
+{
+  "schema_version": "clairsec.bundle/v1",
+  "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+  "project_id": "98d86a9a-7ff6-414b-b5f3-cf0b1d058fb5",
+  "project_name": "Demo: Vulnerable FastAPI App",
+  "recorded_at": "2026-10-18T17:06:41.103373+00:00",
+  "mode": "demo",
+  "posture": {
+    "version": "posture_v1",
+    "before": 55,
+    "after": 100,
+    "grade_before": "D",
+    "grade_after": "A",
+    "coverage": 0.38,
+    "limited_coverage": true,
+    "basis": "Based on 3 tests across 3 of 8 categories. A high score means we did not find these problems — not that none exist.",
+    "inputs": {
+      "confirmed_counts": {
+        "critical": 0,
+        "high": 2,
+        "medium": 1,
+        "low": 0,
+        "informational": 0,
+        "unscored": 0
+      },
+      "unscored_count": 0,
+      "unscored_penalty_each": 9,
+      "inconclusive_count": 0,
+      "inconclusive_penalty": 0,
+      "penalties_before": 45,
+      "penalties_after": 0,
+      "categories_tested": 3,
+      "categories_applicable": 8,
+      "tests_count": 3
+    },
+    "what_moved": [
+      {
+        "finding_id": "9048a355-3755-4d06-9363-7d9e1f5ce914",
+        "title": "BOLA at /documents/{doc_id}",
+        "category": "BOLA",
+        "severity": "medium",
+        "penalty": 9,
+        "verification_outcome": "fixed",
+        "is_fixed": true
+      },
+      {
+        "finding_id": "e18699ab-9112-409d-8716-18246ec1e546",
+        "title": "BOPLA_MASS_ASSIGN at /users/{user_id}/profile",
+        "category": "BOPLA_MASS_ASSIGN",
+        "severity": "high",
+        "penalty": 18,
+        "verification_outcome": "fixed",
+        "is_fixed": true
+      },
+      {
+        "finding_id": "8dda927d-fcc5-46bf-b59b-a71e8817773d",
+        "title": "SECURITY_MISCONFIG at /debug/config",
+        "category": "SECURITY_MISCONFIG",
+        "severity": "high",
+        "penalty": 18,
+        "verification_outcome": "fixed",
+        "is_fixed": true
+      }
+    ]
+  },
+  "counters": {
+    "endpoints_discovered": 7,
+    "tests_generated": 3,
+    "tests_executed": 3,
+    "tests_skipped_policy": 0,
+    "tests_failed_error": 0,
+    "candidates": 3,
+    "confirmed": 3,
+    "rejected": 0,
+    "inconclusive": 0,
+    "fixes_proposed": 3,
+    "fixes_applied": 3,
+    "fixes_verified": 3
+  },
+  "stage_durations": {
+    "builder": 1.547,
+    "attacker": 0.812,
+    "evaluator": 3.265,
+    "fixer": 0.594,
+    "verifier": 12.25
+  },
+  "events": [
+    {
+      "id": "960d6b21-ca71-46dd-a70f-1c951eb817ce",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 1,
+      "timestamp": "2026-10-18T17:06:22.329000",
+      "agent": "builder",
+      "kind": "stage_started",
+      "title": "Builder Agent",
+      "detail": "Extracting API routes, auth schemes and principals",
+      "plain": "Beginning stage: Builder Agent.",
+      "severity": null,
+      "refs": {},
+      "budget": null,
+      "schema_version": 1,
+      "offset_ms": 0
+    },
+    {
+      "id": "b5ee448c-850d-4e9b-b775-048d0cfb2555",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 2,
+      "timestamp": "2026-10-18T17:06:23.133000",
+      "agent": "builder",
+      "kind": "endpoint_discovered",
+      "title": "GET /",
+      "detail": "",
+      "plain": "Discovered API endpoint: GET /.",
+      "severity": null,
+      "refs": {},
+      "budget": null,
+      "schema_version": 1,
+      "offset_ms": 804
+    },
+    {
+      "id": "4a872187-4678-43d0-b341-da599e7e6f86",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 3,
+      "timestamp": "2026-10-18T17:06:23.133000",
+      "agent": "builder",
+      "kind": "endpoint_discovered",
+      "title": "GET /debug/config",
+      "detail": "",
+      "plain": "Discovered API endpoint: GET /debug/config.",
+      "severity": null,
+      "refs": {},
+      "budget": null,
+      "schema_version": 1,
+      "offset_ms": 804
+    },
+    {
+      "id": "3f1f2ced-d397-485c-94da-0a2766ab9900",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 4,
+      "timestamp": "2026-10-18T17:06:23.137000",
+      "agent": "builder",
+      "kind": "endpoint_discovered",
+      "title": "POST /documents",
+      "detail": "",
+      "plain": "Discovered API endpoint: POST /documents.",
+      "severity": null,
+      "refs": {},
+      "budget": null,
+      "schema_version": 1,
+      "offset_ms": 808
+    },
+    {
+      "id": "999a04a8-c06b-4de5-b8b2-abbf69fad5d0",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 5,
+      "timestamp": "2026-10-18T17:06:23.137000",
+      "agent": "builder",
+      "kind": "endpoint_discovered",
+      "title": "GET /documents/{doc_id}",
+      "detail": "",
+      "plain": "Discovered API endpoint: GET /documents/{doc_id}.",
+      "severity": null,
+      "refs": {},
+      "budget": null,
+      "schema_version": 1,
+      "offset_ms": 808
+    },
+    {
+      "id": "03ea877c-9524-42b9-90a9-650f5e63aa06",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 6,
+      "timestamp": "2026-10-18T17:06:23.138000",
+      "agent": "builder",
+      "kind": "endpoint_discovered",
+      "title": "GET /health",
+      "detail": "",
+      "plain": "Discovered API endpoint: GET /health.",
+      "severity": null,
+      "refs": {},
+      "budget": null,
+      "schema_version": 1,
+      "offset_ms": 809
+    },
+    {
+      "id": "41f1a1ab-f139-4a50-ba1c-5702d87b1b2e",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 7,
+      "timestamp": "2026-10-18T17:06:23.138000",
+      "agent": "builder",
+      "kind": "endpoint_discovered",
+      "title": "GET /users/{user_id}",
+      "detail": "",
+      "plain": "Discovered API endpoint: GET /users/{user_id}.",
+      "severity": null,
+      "refs": {},
+      "budget": null,
+      "schema_version": 1,
+      "offset_ms": 809
+    },
+    {
+      "id": "47e672aa-a16e-4361-affb-1958eac87772",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 8,
+      "timestamp": "2026-10-18T17:06:23.141000",
+      "agent": "builder",
+      "kind": "endpoint_discovered",
+      "title": "PUT /users/{user_id}/profile",
+      "detail": "",
+      "plain": "Discovered API endpoint: PUT /users/{user_id}/profile.",
+      "severity": null,
+      "refs": {},
+      "budget": null,
+      "schema_version": 1,
+      "offset_ms": 812
+    },
+    {
+      "id": "4ae2217d-3c13-48a8-a8cc-2f2230204236",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 9,
+      "timestamp": "2026-10-18T17:06:23.860000",
+      "agent": "builder",
+      "kind": "stage_finished",
+      "title": "Builder Agent",
+      "detail": "Discovered 7 endpoints",
+      "plain": "Completed stage: Builder Agent.",
+      "severity": null,
+      "refs": {},
+      "budget": null,
+      "schema_version": 1,
+      "offset_ms": 1531
+    },
+    {
+      "id": "477f47f2-da6e-487d-a850-720771cbfeac",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 10,
+      "timestamp": "2026-10-18T17:06:23.860000",
+      "agent": "attacker",
+      "kind": "stage_started",
+      "title": "Attacker Agent",
+      "detail": "Generating and executing targeted adversarial tests",
+      "plain": "Beginning stage: Attacker Agent.",
+      "severity": null,
+      "refs": {},
+      "budget": null,
+      "schema_version": 1,
+      "offset_ms": 1531
+    },
+    {
+      "id": "dbd3dc86-aa55-4453-96f6-704a6d42a5d3",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 11,
+      "timestamp": "2026-10-18T17:06:24.471000",
+      "agent": "attacker",
+      "kind": "test_planned",
+      "title": "BOLA on /documents/{doc_id}",
+      "detail": "",
+      "plain": "Synthesized targeted security test: BOLA on /documents/{doc_id}.",
+      "severity": null,
+      "refs": {
+        "test_case_id": "2f34d31b-b165-4034-b591-47fcec205e98"
+      },
+      "budget": null,
+      "schema_version": 1,
+      "offset_ms": 2142
+    },
+    {
+      "id": "d17865e2-d17b-496c-be4f-2969728ce605",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 12,
+      "timestamp": "2026-10-18T17:06:24.473000",
+      "agent": "attacker",
+      "kind": "request_sent",
+      "title": "GET /documents/{doc_id}",
+      "detail": "",
+      "plain": "Sent test request: GET /documents/{doc_id}.",
+      "severity": null,
+      "refs": {
+        "test_case_id": "2f34d31b-b165-4034-b591-47fcec205e98"
+      },
+      "budget": null,
+      "schema_version": 1,
+      "offset_ms": 2144
+    },
+    {
+      "id": "9771f46f-a4e6-4e35-9d9b-8c6bbcac8b7a",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 13,
+      "timestamp": "2026-10-18T17:06:24.473000",
+      "agent": "attacker",
+      "kind": "oracle_fired",
+      "title": "Oracle ORACLE-BOLA-001: BOLA confirmed: Principal 'usr_alice_01' retrieved resource owned by 'usr_bob_02' (owner_id='usr_bob_02') with status 200.",
+      "detail": "",
+      "plain": "Security oracle triggered on Oracle ORACLE-BOLA-001: BOLA confirmed: Principal 'usr_alice_01' retrieved resource owned by 'usr_bob_02' (owner_id='usr_bob_02') with status 200..",
+      "severity": null,
+      "refs": {
+        "test_case_id": "2f34d31b-b165-4034-b591-47fcec205e98"
+      },
+      "budget": null,
+      "schema_version": 1,
+      "offset_ms": 2144
+    },
+    {
+      "id": "5901b7b3-ec28-4e53-b813-3b35c6d99c65",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 14,
+      "timestamp": "2026-10-18T17:06:24.473000",
+      "agent": "attacker",
+      "kind": "finding_candidate",
+      "title": "Broken Object Level Authorization (BOLA) at /documents/{doc_id}",
+      "detail": "",
+      "plain": "Potential security issue detected: Broken Object Level Authorization (BOLA) at /documents/{doc_id}.",
+      "severity": null,
+      "refs": {
+        "finding_id": "d7df0f66-a1bb-402a-a89c-78b5617191e6"
+      },
+      "budget": null,
+      "schema_version": 1,
+      "offset_ms": 2144
+    },
+    {
+      "id": "51f9d414-1d01-44b9-8912-2c1cc50b7916",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 15,
+      "timestamp": "2026-10-18T17:06:24.583000",
+      "agent": "attacker",
+      "kind": "test_planned",
+      "title": "BOPLA_MASS_ASSIGN on /users/{user_id}/profile",
+      "detail": "",
+      "plain": "Synthesized targeted security test: BOPLA_MASS_ASSIGN on /users/{user_id}/profile.",
+      "severity": null,
+      "refs": {
+        "test_case_id": "b757c61c-bd27-40c0-a9aa-c11369e7cd1d"
+      },
+      "budget": null,
+      "schema_version": 1,
+      "offset_ms": 2254
+    },
+    {
+      "id": "74da36ee-619d-449f-8434-d4bcd665473e",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 16,
+      "timestamp": "2026-10-18T17:06:24.583000",
+      "agent": "attacker",
+      "kind": "request_sent",
+      "title": "PUT /users/{user_id}/profile",
+      "detail": "",
+      "plain": "Sent test request: PUT /users/{user_id}/profile.",
+      "severity": null,
+      "refs": {
+        "test_case_id": "b757c61c-bd27-40c0-a9aa-c11369e7cd1d"
+      },
+      "budget": null,
+      "schema_version": 1,
+      "offset_ms": 2254
+    },
+    {
+      "id": "012e3763-6fad-4684-81fd-c85e44494da8",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 17,
+      "timestamp": "2026-10-18T17:06:24.584000",
+      "agent": "attacker",
+      "kind": "oracle_fired",
+      "title": "Oracle ORACLE-BOPLA-001: BOPLA Mass Assignment confirmed: Injected privileged fields ['role', 'is_admin'] were persisted and verified on subsequent read.",
+      "detail": "",
+      "plain": "Security oracle triggered on Oracle ORACLE-BOPLA-001: BOPLA Mass Assignment confirmed: Injected privileged fields ['role', 'is_admin'] were persisted and verified on subsequent read..",
+      "severity": null,
+      "refs": {
+        "test_case_id": "b757c61c-bd27-40c0-a9aa-c11369e7cd1d"
+      },
+      "budget": null,
+      "schema_version": 1,
+      "offset_ms": 2255
+    },
+    {
+      "id": "24751239-903b-46e7-a6d8-62b629f9e343",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 18,
+      "timestamp": "2026-10-18T17:06:24.584000",
+      "agent": "attacker",
+      "kind": "finding_candidate",
+      "title": "Mass Assignment via Privileged Field Injection at /users/{user_id}/profile",
+      "detail": "",
+      "plain": "Potential security issue detected: Mass Assignment via Privileged Field Injection at /users/{user_id}/profile.",
+      "severity": null,
+      "refs": {
+        "finding_id": "fa0d9e6b-8369-4121-baa3-d5970e77f240"
+      },
+      "budget": null,
+      "schema_version": 1,
+      "offset_ms": 2255
+    },
+    {
+      "id": "368862a1-bb8d-4c7a-82d5-1150cb32733b",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 19,
+      "timestamp": "2026-10-18T17:06:24.665000",
+      "agent": "attacker",
+      "kind": "test_planned",
+      "title": "SECURITY_MISCONFIG on /debug/config",
+      "detail": "",
+      "plain": "Synthesized targeted security test: SECURITY_MISCONFIG on /debug/config.",
+      "severity": null,
+      "refs": {
+        "test_case_id": "a83ba88b-eed6-4978-b9fa-f795f39cef21"
+      },
+      "budget": null,
+      "schema_version": 1,
+      "offset_ms": 2336
+    },
+    {
+      "id": "6a6b39f6-213a-43e3-aade-ce3760711184",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 20,
+      "timestamp": "2026-10-18T17:06:24.665000",
+      "agent": "attacker",
+      "kind": "request_sent",
+      "title": "GET /debug/config",
+      "detail": "",
+      "plain": "Sent test request: GET /debug/config.",
+      "severity": null,
+      "refs": {
+        "test_case_id": "a83ba88b-eed6-4978-b9fa-f795f39cef21"
+      },
+      "budget": null,
+      "schema_version": 1,
+      "offset_ms": 2336
+    },
+    {
+      "id": "878304a4-ec78-4b79-8d3d-c0d7a66242bc",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 21,
+      "timestamp": "2026-10-18T17:06:24.668000",
+      "agent": "attacker",
+      "kind": "oracle_fired",
+      "title": "Oracle ORACLE-MISCONFIG-001: Insecure CORS origin ('http://evil.example.com') combined with Access-Control-Allow-Credentials: true.",
+      "detail": "",
+      "plain": "Security oracle triggered on Oracle ORACLE-MISCONFIG-001: Insecure CORS origin ('http://evil.example.com') combined with Access-Control-Allow-Credentials: true..",
+      "severity": null,
+      "refs": {
+        "test_case_id": "a83ba88b-eed6-4978-b9fa-f795f39cef21"
+      },
+      "budget": null,
+      "schema_version": 1,
+      "offset_ms": 2339
+    },
+    {
+      "id": "7fc5dae8-0c1a-44fa-942a-946eaff6ddea",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 22,
+      "timestamp": "2026-10-18T17:06:24.668000",
+      "agent": "attacker",
+      "kind": "finding_candidate",
+      "title": "Security Misconfiguration: Exposed Internal Endpoint at /debug/config",
+      "detail": "",
+      "plain": "Potential security issue detected: Security Misconfiguration: Exposed Internal Endpoint at /debug/config.",
+      "severity": null,
+      "refs": {
+        "finding_id": "ac7e2f5b-3d9e-48bf-b091-ce40f66dc7b6"
+      },
+      "budget": null,
+      "schema_version": 1,
+      "offset_ms": 2339
+    },
+    {
+      "id": "1271a4a9-accb-4947-9c64-7766112b8bf2",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 23,
+      "timestamp": "2026-10-18T17:06:24.680000",
+      "agent": "attacker",
+      "kind": "stage_finished",
+      "title": "Attacker Agent",
+      "detail": "Executed 3 tests (3 candidates)",
+      "plain": "Completed stage: Attacker Agent.",
+      "severity": null,
+      "refs": {},
+      "budget": null,
+      "schema_version": 1,
+      "offset_ms": 2351
+    },
+    {
+      "id": "ca34ad39-030d-4baa-a466-baf4a56058d8",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 24,
+      "timestamp": "2026-10-18T17:06:24.693000",
+      "agent": "evaluator",
+      "kind": "stage_started",
+      "title": "Evaluator Agent",
+      "detail": "Adjudicating candidates with deterministic verification oracles",
+      "plain": "Beginning stage: Evaluator Agent.",
+      "severity": null,
+      "refs": {},
+      "budget": null,
+      "schema_version": 1,
+      "offset_ms": 2364
+    },
+    {
+      "id": "b3ab5a77-8b3d-431c-9246-5cc8771fa1cb",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 25,
+      "timestamp": "2026-10-18T17:06:25.918000",
+      "agent": "evaluator",
+      "kind": "oracle_fired",
+      "title": "Deterministic oracle fired for BOLA",
+      "detail": "",
+      "plain": "Security oracle triggered on Deterministic oracle fired for BOLA.",
+      "severity": null,
+      "refs": {
+        "finding_id": "9048a355-3755-4d06-9363-7d9e1f5ce914"
+      },
+      "budget": null,
+      "schema_version": 1,
+      "offset_ms": 3589
+    },
+    {
+      "id": "4e9323b9-a76e-4585-9bcd-7faa2a9c1567",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 26,
+      "timestamp": "2026-10-18T17:06:25.961000",
+      "agent": "evaluator",
+      "kind": "finding_confirmed",
+      "title": "BOLA at /documents/{doc_id}",
+      "detail": "",
+      "plain": "Vulnerability confirmed by deterministic oracle: BOLA at /documents/{doc_id}.",
+      "severity": "MEDIUM",
+      "refs": {
+        "finding_id": "9048a355-3755-4d06-9363-7d9e1f5ce914"
+      },
+      "budget": null,
+      "schema_version": 1,
+      "offset_ms": 3632
+    },
+    {
+      "id": "911c4da2-edf2-45c0-a258-c2a442fe651d",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 27,
+      "timestamp": "2026-10-18T17:06:27.082000",
+      "agent": "evaluator",
+      "kind": "oracle_fired",
+      "title": "Deterministic oracle fired for BOPLA_MASS_ASSIGN",
+      "detail": "",
+      "plain": "Security oracle triggered on Deterministic oracle fired for BOPLA_MASS_ASSIGN.",
+      "severity": null,
+      "refs": {
+        "finding_id": "e18699ab-9112-409d-8716-18246ec1e546"
+      },
+      "budget": null,
+      "schema_version": 1,
+      "offset_ms": 4753
+    },
+    {
+      "id": "1b04b083-b12d-4185-ad69-0b9574b84d0a",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 28,
+      "timestamp": "2026-10-18T17:06:27.083000",
+      "agent": "evaluator",
+      "kind": "finding_confirmed",
+      "title": "BOPLA_MASS_ASSIGN at /users/{user_id}/profile",
+      "detail": "",
+      "plain": "Vulnerability confirmed by deterministic oracle: BOPLA_MASS_ASSIGN at /users/{user_id}/profile.",
+      "severity": "HIGH",
+      "refs": {
+        "finding_id": "e18699ab-9112-409d-8716-18246ec1e546"
+      },
+      "budget": null,
+      "schema_version": 1,
+      "offset_ms": 4754
+    },
+    {
+      "id": "94b9e5cd-057e-4146-a2fd-575f4bd88fd5",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 29,
+      "timestamp": "2026-10-18T17:06:27.955000",
+      "agent": "evaluator",
+      "kind": "oracle_fired",
+      "title": "Deterministic oracle fired for SECURITY_MISCONFIG",
+      "detail": "",
+      "plain": "Security oracle triggered on Deterministic oracle fired for SECURITY_MISCONFIG.",
+      "severity": null,
+      "refs": {
+        "finding_id": "8dda927d-fcc5-46bf-b59b-a71e8817773d"
+      },
+      "budget": null,
+      "schema_version": 1,
+      "offset_ms": 5626
+    },
+    {
+      "id": "adffdad7-c878-445b-a618-b5af4699e2cc",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 30,
+      "timestamp": "2026-10-18T17:06:27.957000",
+      "agent": "evaluator",
+      "kind": "finding_confirmed",
+      "title": "SECURITY_MISCONFIG at /debug/config",
+      "detail": "",
+      "plain": "Vulnerability confirmed by deterministic oracle: SECURITY_MISCONFIG at /debug/config.",
+      "severity": "HIGH",
+      "refs": {
+        "finding_id": "8dda927d-fcc5-46bf-b59b-a71e8817773d"
+      },
+      "budget": null,
+      "schema_version": 1,
+      "offset_ms": 5628
+    },
+    {
+      "id": "62a53544-5d71-4545-a217-9570c97a60b2",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 31,
+      "timestamp": "2026-10-18T17:06:27.958000",
+      "agent": "evaluator",
+      "kind": "stage_finished",
+      "title": "Evaluator Agent",
+      "detail": "Confirmed 3 vulnerabilities",
+      "plain": "Completed stage: Evaluator Agent.",
+      "severity": null,
+      "refs": {},
+      "budget": null,
+      "schema_version": 1,
+      "offset_ms": 5629
+    },
+    {
+      "id": "1bdc4ae0-76bb-4f8e-91f8-6a8a600dda88",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 32,
+      "timestamp": "2026-10-18T17:06:27.968000",
+      "agent": "fixer",
+      "kind": "stage_started",
+      "title": "Fixer Agent",
+      "detail": "Synthesizing AST remediation code patches",
+      "plain": "Beginning stage: Fixer Agent.",
+      "severity": null,
+      "refs": {},
+      "budget": null,
+      "schema_version": 1,
+      "offset_ms": 5639
+    },
+    {
+      "id": "694f2804-a456-4cc0-8fe8-31219abba090",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 33,
+      "timestamp": "2026-10-18T17:06:28.217000",
+      "agent": "fixer",
+      "kind": "patch_proposed",
+      "title": "Remediation patch for 9048a355-3755-4d06-9363-7d9e1f5ce914",
+      "detail": "",
+      "plain": "Fixer proposed code patch: Remediation patch for 9048a355-3755-4d06-9363-7d9e1f5ce914.",
+      "severity": null,
+      "refs": {
+        "patch_id": "eabaedbf-4bf7-4b60-9837-faa8d9f94095",
+        "finding_id": "9048a355-3755-4d06-9363-7d9e1f5ce914"
+      },
+      "budget": null,
+      "schema_version": 1,
+      "offset_ms": 5888
+    },
+    {
+      "id": "2cbebdb2-2e05-494b-ab70-ed83bb05c15b",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 34,
+      "timestamp": "2026-10-18T17:06:28.275000",
+      "agent": "fixer",
+      "kind": "patch_proposed",
+      "title": "Remediation patch for e18699ab-9112-409d-8716-18246ec1e546",
+      "detail": "",
+      "plain": "Fixer proposed code patch: Remediation patch for e18699ab-9112-409d-8716-18246ec1e546.",
+      "severity": null,
+      "refs": {
+        "patch_id": "30b9fb79-a6e9-47e1-a91d-6361bd7f514b",
+        "finding_id": "e18699ab-9112-409d-8716-18246ec1e546"
+      },
+      "budget": null,
+      "schema_version": 1,
+      "offset_ms": 5946
+    },
+    {
+      "id": "ab6af405-03cd-4eb9-b0c4-e27cd1b5ad60",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 35,
+      "timestamp": "2026-10-18T17:06:28.556000",
+      "agent": "fixer",
+      "kind": "patch_proposed",
+      "title": "Remediation patch for 8dda927d-fcc5-46bf-b59b-a71e8817773d",
+      "detail": "",
+      "plain": "Fixer proposed code patch: Remediation patch for 8dda927d-fcc5-46bf-b59b-a71e8817773d.",
+      "severity": null,
+      "refs": {
+        "patch_id": "d4d5fb09-ea03-4401-ad7a-fe27c52eca6e",
+        "finding_id": "8dda927d-fcc5-46bf-b59b-a71e8817773d"
+      },
+      "budget": null,
+      "schema_version": 1,
+      "offset_ms": 6227
+    },
+    {
+      "id": "844f1ed5-da8d-4589-a4a9-e2df53d02850",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 36,
+      "timestamp": "2026-10-18T17:06:28.566000",
+      "agent": "fixer",
+      "kind": "stage_finished",
+      "title": "Fixer Agent",
+      "detail": "Synthesized 3 code patches",
+      "plain": "Completed stage: Fixer Agent.",
+      "severity": null,
+      "refs": {},
+      "budget": null,
+      "schema_version": 1,
+      "offset_ms": 6237
+    },
+    {
+      "id": "68430fb8-8552-41d8-97b4-d5041068d5e4",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 37,
+      "timestamp": "2026-10-18T17:06:28.575000",
+      "agent": "verifier",
+      "kind": "stage_started",
+      "title": "Verifier Agent",
+      "detail": "Re-executing exploits against patched target",
+      "plain": "Beginning stage: Verifier Agent.",
+      "severity": null,
+      "refs": {},
+      "budget": null,
+      "schema_version": 1,
+      "offset_ms": 6246
+    },
+    {
+      "id": "e4114706-3f59-4cb0-a762-7177378a52c9",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 38,
+      "timestamp": "2026-10-18T17:06:30.515000",
+      "agent": "verifier",
+      "kind": "verification_started",
+      "title": "Testing patch for 9048a355-3755-4d06-9363-7d9e1f5ce914",
+      "detail": "",
+      "plain": "Verifying remediation patch against original exploit: Testing patch for 9048a355-3755-4d06-9363-7d9e1f5ce914.",
+      "severity": null,
+      "refs": {
+        "finding_id": "9048a355-3755-4d06-9363-7d9e1f5ce914"
+      },
+      "budget": null,
+      "schema_version": 1,
+      "offset_ms": 8186
+    },
+    {
+      "id": "0063d6d6-2deb-438f-a489-afed2bcc93f8",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 39,
+      "timestamp": "2026-10-18T17:06:33.812000",
+      "agent": "verifier",
+      "kind": "verification_result",
+      "title": "Outcome: fixed",
+      "detail": "dual_criterion_satisfied: original exploit blocked and all 6 functional tests passed; variant query_mutation_and_slash exploited=False",
+      "plain": "Remediation verification completed: Outcome: fixed.",
+      "severity": null,
+      "refs": {
+        "finding_id": "9048a355-3755-4d06-9363-7d9e1f5ce914"
+      },
+      "budget": null,
+      "schema_version": 1,
+      "offset_ms": 11483
+    },
+    {
+      "id": "bb78ecc2-e32f-49da-82bc-9e3b59133c11",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 40,
+      "timestamp": "2026-10-18T17:06:33.813000",
+      "agent": "verifier",
+      "kind": "verification_started",
+      "title": "Testing patch for e18699ab-9112-409d-8716-18246ec1e546",
+      "detail": "",
+      "plain": "Verifying remediation patch against original exploit: Testing patch for e18699ab-9112-409d-8716-18246ec1e546.",
+      "severity": null,
+      "refs": {
+        "finding_id": "e18699ab-9112-409d-8716-18246ec1e546"
+      },
+      "budget": null,
+      "schema_version": 1,
+      "offset_ms": 11484
+    },
+    {
+      "id": "00e014ea-1ffe-4cb2-b90e-d2950e504b47",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 41,
+      "timestamp": "2026-10-18T17:06:37.880000",
+      "agent": "verifier",
+      "kind": "verification_result",
+      "title": "Outcome: fixed",
+      "detail": "dual_criterion_satisfied: original exploit blocked and all 6 functional tests passed; variant alternate_privileged_fields exploited=False",
+      "plain": "Remediation verification completed: Outcome: fixed.",
+      "severity": null,
+      "refs": {
+        "finding_id": "e18699ab-9112-409d-8716-18246ec1e546"
+      },
+      "budget": null,
+      "schema_version": 1,
+      "offset_ms": 15551
+    },
+    {
+      "id": "956dc679-5250-40a7-a66d-d46637f23ced",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 42,
+      "timestamp": "2026-10-18T17:06:37.882000",
+      "agent": "verifier",
+      "kind": "verification_started",
+      "title": "Testing patch for 8dda927d-fcc5-46bf-b59b-a71e8817773d",
+      "detail": "",
+      "plain": "Verifying remediation patch against original exploit: Testing patch for 8dda927d-fcc5-46bf-b59b-a71e8817773d.",
+      "severity": null,
+      "refs": {
+        "finding_id": "8dda927d-fcc5-46bf-b59b-a71e8817773d"
+      },
+      "budget": null,
+      "schema_version": 1,
+      "offset_ms": 15553
+    },
+    {
+      "id": "0971827e-4a7c-4a10-b7fa-ae97429c0376",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 43,
+      "timestamp": "2026-10-18T17:06:40.639000",
+      "agent": "verifier",
+      "kind": "verification_result",
+      "title": "Outcome: fixed",
+      "detail": "dual_criterion_satisfied: original exploit blocked and all 6 functional tests passed; variant trailing_slash_ip_bypass_headers exploited=False",
+      "plain": "Remediation verification completed: Outcome: fixed.",
+      "severity": null,
+      "refs": {
+        "finding_id": "8dda927d-fcc5-46bf-b59b-a71e8817773d"
+      },
+      "budget": null,
+      "schema_version": 1,
+      "offset_ms": 18310
+    },
+    {
+      "id": "fd570bac-30c2-4334-9c1b-18e381e585cd",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 44,
+      "timestamp": "2026-10-18T17:06:40.815000",
+      "agent": "verifier",
+      "kind": "stage_finished",
+      "title": "Verifier Agent",
+      "detail": "Remediation verified: 3 fixed",
+      "plain": "Completed stage: Verifier Agent.",
+      "severity": null,
+      "refs": {},
+      "budget": null,
+      "schema_version": 1,
+      "offset_ms": 18486
+    },
+    {
+      "id": "85f2b4c2-6a8e-4fcc-8cf5-aba24f1b002d",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 45,
+      "timestamp": "2026-10-18T17:06:40.819000",
+      "agent": "system",
+      "kind": "budget",
+      "title": "Resource budget summary",
+      "detail": "",
+      "plain": "Resource budget update: Resource budget summary.",
+      "severity": null,
+      "refs": {},
+      "budget": {
+        "tests_executed": 3,
+        "fixes_verified": 3,
+        "elapsed_s": 21.25
+      },
+      "schema_version": 1,
+      "offset_ms": 18490
+    },
+    {
+      "id": "5b27d1fd-301b-4f8a-924b-72b27ad24751",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "seq": 46,
+      "timestamp": "2026-10-18T17:06:40.820000",
+      "agent": "system",
+      "kind": "stage_finished",
+      "title": "Scan Completed",
+      "detail": "Scan finished in 21.2s",
+      "plain": "Completed stage: Scan Completed.",
+      "severity": null,
+      "refs": {},
+      "budget": null,
+      "schema_version": 1,
+      "offset_ms": 18491
+    }
+  ],
+  "findings": [
+    {
+      "id": "9048a355-3755-4d06-9363-7d9e1f5ce914",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "project_id": "98d86a9a-7ff6-414b-b5f3-cf0b1d058fb5",
+      "title": "BOLA at /documents/{doc_id}",
+      "category": "BOLA",
+      "cwe": [
+        "CWE-639"
+      ],
+      "route_template": "/documents/{doc_id}",
+      "method": "GET",
+      "description": "Confirmed BOLA vulnerability on route /documents/{doc_id} [GET]. Oracle ORACLE-BOLA-001 fired and was independently reproduced.",
+      "impact": "CVSS v3.1 6.5 (MEDIUM) - Vector: CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N",
+      "runtime_confirmed": true,
+      "oracle_rule_id": "ORACLE-BOLA-001",
+      "cvss": {
+        "inputs": {
+          "attack_vector": "N",
+          "attack_complexity": "L",
+          "privileges_required": "L",
+          "user_interaction": "N",
+          "scope": "U",
+          "confidentiality": "H",
+          "integrity": "N",
+          "availability": "N",
+          "evidence_citations": {
+            "confidentiality": "Response leaked another user's resource",
+            "privileges_required": "Authenticated bearer [REDACTED] present in request"
+          }
+        },
+        "vector_string": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N",
+        "base_score": 6.5,
+        "severity": "MEDIUM"
+      },
+      "confidence": {
+        "inputs": {
+          "runtime_confirmed": true,
+          "oracle_fired": true,
+          "reproduced_n_times": 1,
+          "evidence_complete": true
+        },
+        "band": "HIGH",
+        "score": 1.0
+      },
+      "evidence_ids": [
+        "2f34d31b-b165-4034-b591-47fcec205e98",
+        "760a4e39-851d-40d9-95a7-b4b291d937df"
+      ],
+      "reproduction_summary": "Reproduced on http://127.0.0.1:59204: BOLA confirmed: Principal 'usr_alice_01' retrieved resource owned by 'usr_bob_02' (owner_id='usr_bob_02') with status 200.",
+      "source_locations": [],
+      "status": "confirmed",
+      "status_reason": "reproduced_and_verified",
+      "agent_provenance": {
+        "proposed_by": "attacker",
+        "evaluated_by": "evaluator",
+        "prompt_version": "v1.0"
+      },
+      "duplicate_of": null,
+      "superseded_by": null,
+      "created_at": "2026-10-18T17:06:25.903422+00:00"
+    },
+    {
+      "id": "e18699ab-9112-409d-8716-18246ec1e546",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "project_id": "98d86a9a-7ff6-414b-b5f3-cf0b1d058fb5",
+      "title": "BOPLA_MASS_ASSIGN at /users/{user_id}/profile",
+      "category": "BOPLA_MASS_ASSIGN",
+      "cwe": [
+        "CWE-915"
+      ],
+      "route_template": "/users/{user_id}/profile",
+      "method": "PUT",
+      "description": "Confirmed BOPLA_MASS_ASSIGN vulnerability on route /users/{user_id}/profile [PUT]. Oracle ORACLE-BOPLA-001 fired and was independently reproduced.",
+      "impact": "CVSS v3.1 8.1 (HIGH) - Vector: CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:N",
+      "runtime_confirmed": true,
+      "oracle_rule_id": "ORACLE-BOPLA-001",
+      "cvss": {
+        "inputs": {
+          "attack_vector": "N",
+          "attack_complexity": "L",
+          "privileges_required": "L",
+          "user_interaction": "N",
+          "scope": "U",
+          "confidentiality": "H",
+          "integrity": "H",
+          "availability": "N",
+          "evidence_citations": {
+            "integrity": "Injected privileged field persisted in resource state",
+            "confidentiality": "Elevated access gained via mass assignment"
+          }
+        },
+        "vector_string": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:N",
+        "base_score": 8.1,
+        "severity": "HIGH"
+      },
+      "confidence": {
+        "inputs": {
+          "runtime_confirmed": true,
+          "oracle_fired": true,
+          "reproduced_n_times": 1,
+          "evidence_complete": true
+        },
+        "band": "HIGH",
+        "score": 1.0
+      },
+      "evidence_ids": [
+        "b757c61c-bd27-40c0-a9aa-c11369e7cd1d",
+        "7220efd8-ab7b-4d10-bd66-3de5e3ffa3c1"
+      ],
+      "reproduction_summary": "Reproduced on http://127.0.0.1:59204: BOPLA Mass Assignment confirmed: Injected privileged fields ['role', 'is_admin'] were persisted and verified on subsequent read.",
+      "source_locations": [],
+      "status": "confirmed",
+      "status_reason": "reproduced_and_verified",
+      "agent_provenance": {
+        "proposed_by": "attacker",
+        "evaluated_by": "evaluator",
+        "prompt_version": "v1.0"
+      },
+      "duplicate_of": null,
+      "superseded_by": null,
+      "created_at": "2026-10-18T17:06:27.080193+00:00"
+    },
+    {
+      "id": "8dda927d-fcc5-46bf-b59b-a71e8817773d",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "project_id": "98d86a9a-7ff6-414b-b5f3-cf0b1d058fb5",
+      "title": "SECURITY_MISCONFIG at /debug/config",
+      "category": "SECURITY_MISCONFIG",
+      "cwe": [
+        "CWE-16"
+      ],
+      "route_template": "/debug/config",
+      "method": "GET",
+      "description": "Confirmed SECURITY_MISCONFIG vulnerability on route /debug/config [GET]. Oracle ORACLE-MISCONFIG-001 fired and was independently reproduced.",
+      "impact": "CVSS v3.1 7.5 (HIGH) - Vector: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+      "runtime_confirmed": true,
+      "oracle_rule_id": "ORACLE-MISCONFIG-001",
+      "cvss": {
+        "inputs": {
+          "attack_vector": "N",
+          "attack_complexity": "L",
+          "privileges_required": "N",
+          "user_interaction": "N",
+          "scope": "U",
+          "confidentiality": "H",
+          "integrity": "N",
+          "availability": "N",
+          "evidence_citations": {
+            "confidentiality": "Debug keys or database credentials exposed without authentication",
+            "privileges_required": "Unauthenticated endpoint"
+          }
+        },
+        "vector_string": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+        "base_score": 7.5,
+        "severity": "HIGH"
+      },
+      "confidence": {
+        "inputs": {
+          "runtime_confirmed": true,
+          "oracle_fired": true,
+          "reproduced_n_times": 1,
+          "evidence_complete": true
+        },
+        "band": "HIGH",
+        "score": 1.0
+      },
+      "evidence_ids": [
+        "a83ba88b-eed6-4978-b9fa-f795f39cef21",
+        "0f2f9019-1aac-488b-999d-02b6410e3fd8"
+      ],
+      "reproduction_summary": "Reproduced on http://127.0.0.1:59204: Insecure CORS origin ('http://evil.example.com') combined with Access-Control-Allow-Credentials: true.",
+      "source_locations": [],
+      "status": "confirmed",
+      "status_reason": "reproduced_and_verified",
+      "agent_provenance": {
+        "proposed_by": "attacker",
+        "evaluated_by": "evaluator",
+        "prompt_version": "v1.0"
+      },
+      "duplicate_of": null,
+      "superseded_by": null,
+      "created_at": "2026-10-18T17:06:27.953394+00:00"
+    }
+  ],
+  "test_cases": [
+    {
+      "id": "2f34d31b-b165-4034-b591-47fcec205e98",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "category": "BOLA",
+      "route_template": "/documents/{doc_id}",
+      "method": "GET",
+      "principal_id": "usr_alice_01",
+      "request": {
+        "method": "GET",
+        "url_path": "/documents/doc_bob_02",
+        "headers": {
+          "Authorization": "[REDACTED]"
+        },
+        "body": null,
+        "truncated": false,
+        "sha256": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "date": "Sun, 18 Oct 2026 17:06:21 GMT",
+          "server": "uvicorn",
+          "content-length": "149",
+          "content-type": "application/json"
+        },
+        "body": "{\"doc_id\":\"doc_bob_02\",\"owner_id\":\"usr_bob_02\",\"title\":\"Bob's Personal Budget\",\"content\":\"Personal compensation breakdown and private home address.\"}",
+        "elapsed_ms": 8,
+        "truncated": false,
+        "sha256": null
+      },
+      "oracle_result": {
+        "fired": true,
+        "rule_id": "ORACLE-BOLA-001",
+        "category": "BOLA",
+        "cwe": "CWE-639",
+        "rationale": "BOLA confirmed: Principal 'usr_alice_01' retrieved resource owned by 'usr_bob_02' (owner_id='usr_bob_02') with status 200.",
+        "evidence": {
+          "request_principal": "usr_alice_01",
+          "target_owner": "usr_bob_02",
+          "returned_owner": "usr_bob_02",
+          "doc_id": "doc_bob_02",
+          "title": "Bob's Personal Budget"
+        }
+      },
+      "status": "executed",
+      "skip_reason": null,
+      "error_detail": null,
+      "generated_by": {
+        "agent": "attacker",
+        "prompt_id": "attacker_test_generator",
+        "prompt_version": "v1.0",
+        "llm_call_id": null
+      },
+      "executed_at": "2026-10-18T17:06:24.470312+00:00",
+      "kind": "attack",
+      "replay_of": null,
+      "replay_target": null
+    },
+    {
+      "id": "b757c61c-bd27-40c0-a9aa-c11369e7cd1d",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "category": "BOPLA_MASS_ASSIGN",
+      "route_template": "/users/{user_id}/profile",
+      "method": "PUT",
+      "principal_id": "usr_alice_01",
+      "request": {
+        "method": "PUT",
+        "url_path": "/users/usr_alice_01/profile",
+        "headers": {
+          "Authorization": "[REDACTED]"
+        },
+        "body": {
+          "display_name": "Alice Exploit",
+          "bio": "Privilege escalation security test probe.",
+          "role": "admin",
+          "is_admin": true
+        },
+        "truncated": false,
+        "sha256": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "date": "Sun, 18 Oct 2026 17:06:21 GMT",
+          "server": "uvicorn",
+          "content-length": "218",
+          "content-type": "application/json"
+        },
+        "body": "{\"status\":\"updated\",\"user\":{\"user_id\":\"usr_alice_01\",\"username\":\"alice\",\"token\":\"Bearer [REDACTED]\",\"display_name\":\"Alice Exploit\",\"bio\":\"Privilege escalation security test probe.\",\"role\":\"admin\",\"is_admin\":true}}",
+        "elapsed_ms": 63,
+        "truncated": false,
+        "sha256": null
+      },
+      "oracle_result": {
+        "fired": true,
+        "rule_id": "ORACLE-BOPLA-001",
+        "category": "BOPLA_MASS_ASSIGN",
+        "cwe": "CWE-915",
+        "rationale": "BOPLA Mass Assignment confirmed: Injected privileged fields ['role', 'is_admin'] were persisted and verified on subsequent read.",
+        "evidence": {
+          "write_status": 200,
+          "read_status": 200,
+          "injected_fields": {
+            "role": "admin",
+            "is_admin": true
+          },
+          "persisted_fields": {
+            "role": "admin",
+            "is_admin": true
+          }
+        }
+      },
+      "status": "executed",
+      "skip_reason": null,
+      "error_detail": null,
+      "generated_by": {
+        "agent": "attacker",
+        "prompt_id": "attacker_test_generator",
+        "prompt_version": "v1.0",
+        "llm_call_id": null
+      },
+      "executed_at": "2026-10-18T17:06:24.582757+00:00",
+      "kind": "attack",
+      "replay_of": null,
+      "replay_target": null
+    },
+    {
+      "id": "a83ba88b-eed6-4978-b9fa-f795f39cef21",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "category": "SECURITY_MISCONFIG",
+      "route_template": "/debug/config",
+      "method": "GET",
+      "principal_id": null,
+      "request": {
+        "method": "GET",
+        "url_path": "/debug/config",
+        "headers": {
+          "Origin": "http://evil.example.com"
+        },
+        "body": null,
+        "truncated": false,
+        "sha256": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "date": "Sun, 18 Oct 2026 17:06:24 GMT",
+          "server": "uvicorn",
+          "content-length": "203",
+          "content-type": "application/json",
+          "access-control-allow-origin": "http://evil.example.com",
+          "access-control-allow-credentials": "true",
+          "vary": "Origin"
+        },
+        "body": "{\"debug_mode\":true,\"environment\":\"production\",\"database_url\":\"postgresql://postgres:<redacted:password>@db.internal:5432/main\",\"internal_api_key\":\"<redacted:internal_key>\",\"cors_allow_all\":true}",
+        "elapsed_ms": 77,
+        "truncated": false,
+        "sha256": null
+      },
+      "oracle_result": {
+        "fired": true,
+        "rule_id": "ORACLE-MISCONFIG-001",
+        "category": "SECURITY_MISCONFIG",
+        "cwe": "CWE-16",
+        "rationale": "Insecure CORS origin ('http://evil.example.com') combined with Access-Control-Allow-Credentials: true.",
+        "evidence": {
+          "cors_headers": {
+            "date": "Sun, 18 Oct 2026 17:06:24 GMT",
+            "server": "uvicorn",
+            "content-length": "203",
+            "content-type": "application/json",
+            "access-control-allow-origin": "http://evil.example.com",
+            "access-control-allow-credentials": "true",
+            "vary": "Origin"
+          },
+          "request_origin": "http://evil.example.com"
+        }
+      },
+      "status": "executed",
+      "skip_reason": null,
+      "error_detail": null,
+      "generated_by": {
+        "agent": "attacker",
+        "prompt_id": "attacker_test_generator",
+        "prompt_version": "v1.0",
+        "llm_call_id": null
+      },
+      "executed_at": "2026-10-18T17:06:24.664294+00:00",
+      "kind": "attack",
+      "replay_of": null,
+      "replay_target": null
+    },
+    {
+      "id": "760a4e39-851d-40d9-95a7-b4b291d937df",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "category": "BOLA",
+      "route_template": "/documents/{doc_id}",
+      "method": "GET",
+      "principal_id": null,
+      "request": {
+        "method": "GET",
+        "url_path": "/documents/doc_bob_02",
+        "headers": {
+          "Authorization": "[REDACTED]"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "date": "Sun, 18 Oct 2026 17:06:24 GMT",
+          "server": "uvicorn",
+          "content-length": "149",
+          "content-type": "application/json"
+        },
+        "body": "{\"doc_id\":\"doc_bob_02\",\"owner_id\":\"usr_bob_02\",\"title\":\"Bob's Personal Budget\",\"content\":\"Personal compensation breakdown and private home address.\"}",
+        "elapsed_ms": 42.721000000000004
+      },
+      "oracle_result": {
+        "fired": true,
+        "rule_id": "ORACLE-BOLA-001",
+        "category": "BOLA",
+        "cwe": "CWE-639",
+        "rationale": "BOLA confirmed: Principal 'usr_alice_01' retrieved resource owned by 'usr_bob_02' (owner_id='usr_bob_02') with status 200.",
+        "evidence": {
+          "request_principal": "usr_alice_01",
+          "target_owner": "usr_bob_02",
+          "returned_owner": "usr_bob_02",
+          "doc_id": "doc_bob_02",
+          "title": "Bob's Personal Budget"
+        }
+      },
+      "status": "executed",
+      "skip_reason": null,
+      "error_detail": null,
+      "generated_by": {
+        "agent": "evaluator",
+        "prompt_id": "evaluator_reproducer",
+        "prompt_version": "v1.0",
+        "llm_call_id": null
+      },
+      "executed_at": "2026-10-18T17:06:25.901907+00:00",
+      "kind": "attack",
+      "replay_of": null,
+      "replay_target": null
+    },
+    {
+      "id": "7220efd8-ab7b-4d10-bd66-3de5e3ffa3c1",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "category": "BOPLA_MASS_ASSIGN",
+      "route_template": "/users/{user_id}/profile",
+      "method": "PUT",
+      "principal_id": null,
+      "request": {
+        "method": "PUT",
+        "url_path": "/users/usr_alice_01/profile",
+        "headers": {
+          "Authorization": "[REDACTED]"
+        },
+        "body": {
+          "display_name": "Alice Exploit",
+          "bio": "Privilege escalation security test probe.",
+          "role": "admin",
+          "is_admin": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "date": "Sun, 18 Oct 2026 17:06:24 GMT",
+          "server": "uvicorn",
+          "content-length": "218",
+          "content-type": "application/json"
+        },
+        "body": "{\"user_id\":\"usr_alice_01\",\"username\":\"alice\",\"token\":\"Bearer [REDACTED]\",\"display_name\":\"Alice Exploit\",\"bio\":\"Privilege escalation security test probe.\",\"role\":\"admin\",\"is_admin\":true}",
+        "elapsed_ms": 21.688
+      },
+      "oracle_result": {
+        "fired": true,
+        "rule_id": "ORACLE-BOPLA-001",
+        "category": "BOPLA_MASS_ASSIGN",
+        "cwe": "CWE-915",
+        "rationale": "BOPLA Mass Assignment confirmed: Injected privileged fields ['role', 'is_admin'] were persisted and verified on subsequent read.",
+        "evidence": {
+          "write_status": 200,
+          "read_status": 200,
+          "injected_fields": {
+            "role": "admin",
+            "is_admin": true
+          },
+          "persisted_fields": {
+            "role": "admin",
+            "is_admin": true
+          }
+        }
+      },
+      "status": "executed",
+      "skip_reason": null,
+      "error_detail": null,
+      "generated_by": {
+        "agent": "evaluator",
+        "prompt_id": "evaluator_reproducer",
+        "prompt_version": "v1.0",
+        "llm_call_id": null
+      },
+      "executed_at": "2026-10-18T17:06:27.075192+00:00",
+      "kind": "attack",
+      "replay_of": null,
+      "replay_target": null
+    },
+    {
+      "id": "0f2f9019-1aac-488b-999d-02b6410e3fd8",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "category": "SECURITY_MISCONFIG",
+      "route_template": "/debug/config",
+      "method": "GET",
+      "principal_id": null,
+      "request": {
+        "method": "GET",
+        "url_path": "/debug/config",
+        "headers": {
+          "Origin": "http://evil.example.com"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "date": "Sun, 18 Oct 2026 17:06:24 GMT",
+          "server": "uvicorn",
+          "content-length": "203",
+          "content-type": "application/json",
+          "access-control-allow-origin": "http://evil.example.com",
+          "access-control-allow-credentials": "true",
+          "vary": "Origin"
+        },
+        "body": "{\"debug_mode\":true,\"environment\":\"production\",\"database_url\":\"postgresql://postgres:prod_secret_pass_99@db.internal:5432/main\",\"internal_api_key\":\"sec-prod-internal-master-key-999\",\"cors_allow_all\":true}",
+        "elapsed_ms": 9.807
+      },
+      "oracle_result": {
+        "fired": true,
+        "rule_id": "ORACLE-MISCONFIG-001",
+        "category": "SECURITY_MISCONFIG",
+        "cwe": "CWE-16",
+        "rationale": "Insecure CORS origin ('http://evil.example.com') combined with Access-Control-Allow-Credentials: true.",
+        "evidence": {
+          "cors_headers": {
+            "date": "Sun, 18 Oct 2026 17:06:24 GMT",
+            "server": "uvicorn",
+            "content-length": "203",
+            "content-type": "application/json",
+            "access-control-allow-origin": "http://evil.example.com",
+            "access-control-allow-credentials": "true",
+            "vary": "Origin"
+          },
+          "request_origin": "http://evil.example.com"
+        }
+      },
+      "status": "executed",
+      "skip_reason": null,
+      "error_detail": null,
+      "generated_by": {
+        "agent": "evaluator",
+        "prompt_id": "evaluator_reproducer",
+        "prompt_version": "v1.0",
+        "llm_call_id": null
+      },
+      "executed_at": "2026-10-18T17:06:27.951395+00:00",
+      "kind": "attack",
+      "replay_of": null,
+      "replay_target": null
+    }
+  ],
+  "patches": [
+    {
+      "id": "eabaedbf-4bf7-4b60-9837-faa8d9f94095",
+      "finding_id": "9048a355-3755-4d06-9363-7d9e1f5ce914",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "project_id": "98d86a9a-7ff6-414b-b5f3-cf0b1d058fb5",
+      "files": [
+        {
+          "path": "main.py",
+          "diff": "--- a/main.py\n+++ b/main.py\n@@ -126,6 +126,8 @@\n     doc = DOCUMENTS.get(doc_id)\n     if not doc:\n         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=\"Document not found\")\n     # VULNERABILITY: Missing ownership check (doc[\"owner_id\"] == current_user[\"user_id\"])\n+    if doc[\"owner_id\"] != current_user[\"user_id\"]:\n+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=\"Forbidden\")\n     return doc\n"
+        }
+      ],
+      "diff_stats": {
+        "files": 1,
+        "added": 2,
+        "removed": 0
+      },
+      "rationale": "Add authorization predicate ensuring document owner_id matches current_user user_id, raising 403 Forbidden otherwise.",
+      "root_cause": "Object lookup at GET /documents/{doc_id} lacks ownership verification check against authenticated principal.",
+      "prompt_version": "v1.0",
+      "llm_call_id": null,
+      "applied": true,
+      "applied_at": "2026-10-18T17:06:28.216527+00:00",
+      "apply_error": null,
+      "workspace": "modified",
+      "validation": {
+        "ast_parsed": true,
+        "path_check_passed": true,
+        "size_ok": true
+      },
+      "created_at": "2026-10-18T17:06:28.216527+00:00"
+    },
+    {
+      "id": "30b9fb79-a6e9-47e1-a91d-6361bd7f514b",
+      "finding_id": "e18699ab-9112-409d-8716-18246ec1e546",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "project_id": "98d86a9a-7ff6-414b-b5f3-cf0b1d058fb5",
+      "files": [
+        {
+          "path": "main.py",
+          "diff": "--- a/main.py\n+++ b/main.py\n@@ -155,7 +155,7 @@\n class ProfileUpdateRequest(BaseModel):\n     display_name: str | None = None\n     bio: str | None = None\n \n-    model_config = ConfigDict(extra=\"allow\")  # VULNERABILITY: Unvalidated extra fields accepted\n+    model_config = ConfigDict(extra=\"forbid\")\n@@ -174,6 +174,9 @@\n     # VULNERABILITY: Arbitrary fields from extra are persisted to the user model\n     update_data = payload.model_dump(exclude_unset=True)\n+    allowed_keys = {\"display_name\", \"bio\"}\n+    filtered_data = {k: v for k, v in update_data.items() if k in allowed_keys}\n-    user.update(update_data)\n+    user.update(filtered_data)\n     return {\"status\": \"updated\", \"user\": user}\n"
+        }
+      ],
+      "diff_stats": {
+        "files": 1,
+        "added": 4,
+        "removed": 2
+      },
+      "rationale": "Forbid arbitrary extra fields in Pydantic schema and enforce strict field filtering during user profile update.",
+      "root_cause": "ProfileUpdateRequest model allows unvalidated extra fields (ConfigDict extra='allow') and updates user record without field whitelisting.",
+      "prompt_version": "v1.0",
+      "llm_call_id": null,
+      "applied": true,
+      "applied_at": "2026-10-18T17:06:28.271690+00:00",
+      "apply_error": null,
+      "workspace": "modified",
+      "validation": {
+        "ast_parsed": true,
+        "path_check_passed": true,
+        "size_ok": true
+      },
+      "created_at": "2026-10-18T17:06:28.271690+00:00"
+    },
+    {
+      "id": "d4d5fb09-ea03-4401-ad7a-fe27c52eca6e",
+      "finding_id": "8dda927d-fcc5-46bf-b59b-a71e8817773d",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "project_id": "98d86a9a-7ff6-414b-b5f3-cf0b1d058fb5",
+      "files": [
+        {
+          "path": "main.py",
+          "diff": "--- a/main.py\n+++ b/main.py\n@@ -18,11 +18,11 @@\n app = FastAPI(\n     title=\"Notes & Identity API (Vulnerable)\",\n     version=\"1.0.0\",\n-    debug=True,  # SECURITY_MISCONFIG: Debug mode enabled in production build\n+    debug=False,\n )\n \n # SECURITY_MISCONFIG: Wildcard CORS with credentials\n app.add_middleware(\n     CORSMiddleware,\n-    allow_origins=[\"*\"],\n+    allow_origins=[\"http://localhost:3000\"],\n     allow_credentials=True,\n@@ -198,3 +198,5 @@\n @app.get(\"/debug/config\")\n-def get_debug_config() -> dict[str, Any]:\n+def get_debug_config(current_user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:\n+    if not current_user.get(\"is_admin\"):\n+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=\"Admin access required\")\n"
+        }
+      ],
+      "diff_stats": {
+        "files": 1,
+        "added": 5,
+        "removed": 3
+      },
+      "rationale": "Disable debug mode, restrict CORS origin, and require authenticated admin user for debug config endpoint.",
+      "root_cause": "Debug mode enabled, CORS misconfigured with wildcard origin + credentials, and /debug/config is unauthenticated.",
+      "prompt_version": "v1.0",
+      "llm_call_id": null,
+      "applied": true,
+      "applied_at": "2026-10-18T17:06:28.553789+00:00",
+      "apply_error": null,
+      "workspace": "modified",
+      "validation": {
+        "ast_parsed": true,
+        "path_check_passed": true,
+        "size_ok": true
+      },
+      "created_at": "2026-10-18T17:06:28.553789+00:00"
+    }
+  ],
+  "verification_results": [
+    {
+      "id": "cd72e459-9dcc-4254-b8b7-ca77d1721bf2",
+      "finding_id": "9048a355-3755-4d06-9363-7d9e1f5ce914",
+      "patch_id": "eabaedbf-4bf7-4b60-9837-faa8d9f94095",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "rebuild_ok": true,
+      "original_exploit": {
+        "ran": true,
+        "exploited": false,
+        "rationale": "Response status 403 is not 2xx. Access denied or resource not found.",
+        "exchange": {
+          "request": {
+            "method": "GET",
+            "url_path": "/documents/doc_bob_02",
+            "headers": {
+              "Authorization": "[REDACTED]"
+            },
+            "body": null,
+            "truncated": false,
+            "sha256": null
+          },
+          "response": {
+            "status": 403,
+            "headers": {
+              "date": "Sun, 18 Oct 2026 17:06:29 GMT",
+              "server": "uvicorn",
+              "content-length": "22",
+              "content-type": "application/json"
+            },
+            "body": "{\"detail\":\"Forbidden\"}",
+            "elapsed_ms": 10.8,
+            "truncated": false,
+            "sha256": null
+          }
+        }
+      },
+      "functional_suite": {
+        "ran": true,
+        "passed": 6,
+        "failed": 0,
+        "newly_failing": [],
+        "total": 6,
+        "source": "fixture_suite",
+        "detail": ""
+      },
+      "variant_attack": {
+        "ran": true,
+        "exploited": false,
+        "variant_kind": "query_mutation_and_slash",
+        "rationale": "Variant probe on /documents/doc_bob_02/?include_metadata=true: Response status 403 is not 2xx. Access denied or resource not found."
+      },
+      "endpoint_preserved": {
+        "ran": true,
+        "preserved": true,
+        "route": "/documents/{doc_id}",
+        "method": "GET",
+        "detail": "GET /documents/{doc_id} is still defined in the patched code."
+      },
+      "outcome": "fixed",
+      "outcome_reason": "dual_criterion_satisfied: original exploit blocked and all 6 functional tests passed; variant query_mutation_and_slash exploited=False",
+      "duration_s": 3.2953645000015968,
+      "created_at": "2026-10-18T17:06:33.811962+00:00"
+    },
+    {
+      "id": "f8ce6f29-9464-41b7-af87-c6ecb9899888",
+      "finding_id": "e18699ab-9112-409d-8716-18246ec1e546",
+      "patch_id": "30b9fb79-a6e9-47e1-a91d-6361bd7f514b",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "rebuild_ok": true,
+      "original_exploit": {
+        "ran": true,
+        "exploited": false,
+        "rationale": "Subsequent read confirms injected privileged fields were not persisted.",
+        "exchange": {
+          "request": {
+            "method": "PUT",
+            "url_path": "/users/usr_alice_01/profile",
+            "headers": {
+              "Authorization": "[REDACTED]"
+            },
+            "body": {
+              "display_name": "Alice Exploit",
+              "bio": "Privilege escalation security test probe.",
+              "role": "admin",
+              "is_admin": true
+            },
+            "truncated": false,
+            "sha256": null
+          },
+          "response": {
+            "status": 422,
+            "headers": {
+              "date": "Sun, 18 Oct 2026 17:06:32 GMT",
+              "server": "uvicorn",
+              "content-length": "221",
+              "content-type": "application/json"
+            },
+            "body": "{\"detail\":[{\"type\":\"extra_forbidden\",\"loc\":[\"body\",\"role\"],\"msg\":\"Extra inputs are not permitted\",\"input\":\"admin\"},{\"type\":\"extra_forbidden\",\"loc\":[\"body\",\"is_admin\"],\"msg\":\"Extra inputs are not permitted\",\"input\":true}]}",
+            "elapsed_ms": 13.3,
+            "truncated": false,
+            "sha256": null
+          }
+        }
+      },
+      "functional_suite": {
+        "ran": true,
+        "passed": 6,
+        "failed": 0,
+        "newly_failing": [],
+        "total": 6,
+        "source": "fixture_suite",
+        "detail": ""
+      },
+      "variant_attack": {
+        "ran": true,
+        "exploited": false,
+        "variant_kind": "alternate_privileged_fields",
+        "rationale": "Variant probe with alternate fields: Subsequent read confirms injected privileged fields were not persisted."
+      },
+      "endpoint_preserved": {
+        "ran": true,
+        "preserved": true,
+        "route": "/users/{user_id}/profile",
+        "method": "PUT",
+        "detail": "PUT /users/{user_id}/profile is still defined in the patched code."
+      },
+      "outcome": "fixed",
+      "outcome_reason": "dual_criterion_satisfied: original exploit blocked and all 6 functional tests passed; variant alternate_privileged_fields exploited=False",
+      "duration_s": 4.065370399999665,
+      "created_at": "2026-10-18T17:06:37.878441+00:00"
+    },
+    {
+      "id": "0de3aa47-1121-4235-a6a0-88ff62c8074b",
+      "finding_id": "8dda927d-fcc5-46bf-b59b-a71e8817773d",
+      "patch_id": "d4d5fb09-ea03-4401-ad7a-fe27c52eca6e",
+      "scan_id": "5f8f4ce0-6355-48f8-b9e2-80ba176c3a68",
+      "rebuild_ok": true,
+      "original_exploit": {
+        "ran": true,
+        "exploited": false,
+        "rationale": "Endpoint /debug/config returned status 401 (not accessible).",
+        "exchange": {
+          "request": {
+            "method": "GET",
+            "url_path": "/debug/config",
+            "headers": {
+              "Origin": "http://evil.example.com"
+            },
+            "body": null,
+            "truncated": false,
+            "sha256": null
+          },
+          "response": {
+            "status": 401,
+            "headers": {
+              "date": "Sun, 18 Oct 2026 17:06:36 GMT",
+              "server": "uvicorn",
+              "content-length": "48",
+              "content-type": "application/json",
+              "access-control-allow-credentials": "true"
+            },
+            "body": "{\"detail\":\"Missing authentication credentials.\"}",
+            "elapsed_ms": 10.4,
+            "truncated": false,
+            "sha256": null
+          }
+        }
+      },
+      "functional_suite": {
+        "ran": true,
+        "passed": 6,
+        "failed": 0,
+        "newly_failing": [],
+        "total": 6,
+        "source": "fixture_suite",
+        "detail": ""
+      },
+      "variant_attack": {
+        "ran": true,
+        "exploited": false,
+        "variant_kind": "trailing_slash_ip_bypass_headers",
+        "rationale": "Variant probe on /debug/config/?debug=true: Endpoint /debug/config/?debug=true returned status 401 (not accessible)."
+      },
+      "endpoint_preserved": {
+        "ran": true,
+        "preserved": true,
+        "route": "/debug/config",
+        "method": "GET",
+        "detail": "GET /debug/config is still defined in the patched code."
+      },
+      "outcome": "fixed",
+      "outcome_reason": "dual_criterion_satisfied: original exploit blocked and all 6 functional tests passed; variant trailing_slash_ip_bypass_headers exploited=False",
+      "duration_s": 2.761903500002518,
+      "created_at": "2026-10-18T17:06:40.639154+00:00"
+    }
+  ],
+  "bundle_size_bytes": 49295,
+  "recorded_from": "real Demo-mode scan (trusted fixture runner, offline AI provider)"
+}
