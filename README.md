@@ -1,5 +1,10 @@
 # ClairSec — Adversarial Multi-Agent FastAPI Security Research Platform
 
+> **Final presentation guide & user manual:** [`ClairSec_Final_Presentation_Guide.pdf`](ClairSec_Final_Presentation_Guide.pdf)
+> (setup, 7-minute demo, GitHub URLs to import, offline fallback, troubleshooting, panel Q&A).
+> Source: [`docs/v2/GUIDE.html`](docs/v2/GUIDE.html). Developer docs: [`docs/v2/`](docs/v2/).
+
+
 ClairSec is an adversarial multi-agent security research platform for FastAPI applications. It pairs an autonomous adversarial testing pipeline with an isolated runtime environment and structured evaluation.
 
 ## Prerequisites

@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ClairSec — Final Presentation Guide &amp; User Manual</title>
+<style>
+  @page { size: A4; margin: 16mm 15mm; }
+  body { font: 11pt/1.5 "Segoe UI", Inter, Arial, sans-serif; color: #1f2328; margin: 0; }
+  h1 { font-size: 26pt; margin: 0 0 4pt; color: #0969da; }
+  h2 { font-size: 16pt; margin: 22pt 0 8pt; padding-bottom: 4pt; border-bottom: 2px solid #d0d7de; break-after: avoid; }
+  h3 { font-size: 12.5pt; margin: 14pt 0 4pt; break-after: avoid; }
+  p, li { margin: 3pt 0; }
+  code, pre { font-family: "JetBrains Mono", Consolas, monospace; font-size: 9.5pt; }
+  code { background: #eef1f4; padding: 0 3pt; border-radius: 3pt; }
+  pre { background: #f6f8fa; border: 1px solid #d0d7de; border-radius: 6pt; padding: 8pt 10pt; white-space: pre-wrap; break-inside: avoid; }
+  table { width: 100%; border-collapse: collapse; margin: 6pt 0; font-size: 10pt; break-inside: avoid; }
+  th, td { border: 1px solid #d0d7de; padding: 4pt 6pt; text-align: left; vertical-align: top; }
+  th { background: #f6f8fa; }
+  .cover { text-align: center; padding-top: 70pt; }
+  .cover p { font-size: 13pt; color: #59636e; }
+  .box { border: 1px solid #d0d7de; border-left: 5px solid #0969da; border-radius: 6pt; padding: 8pt 12pt; margin: 8pt 0; background: #f6f8fa; break-inside: avoid; }
+  .warn { border-left-color: #9a6700; background: #fff8e1; }
+  .ok { border-left-color: #1a7f37; background: #eef9f1; }
+  .page { break-before: page; }
+  .small { font-size: 9.5pt; color: #59636e; }
+  ol.steps > li { margin: 5pt 0; }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <h1>ClairSec</h1>
+  <p>Adversarial FastAPI Security Platform</p>
+  <p><b>Final Presentation Guide &amp; User Manual</b></p>
+  <p class="small">Covers: setup, the 7-minute demo, GitHub import, offline / no-internet operation,<br>
+  every screen, the AI assistant, troubleshooting and panel Q&amp;A.</p>
+  <div class="box" style="text-align:left;max-width:520px;margin:30pt auto 0">
+    <b>One-line pitch:</b> ClairSec attacks your API the way a real attacker would — inside a sealed box —
+    proves what it finds, writes the fix, and proves the fix works. No AI is ever allowed to grade its own work.
+  </div>
+</div>
+
+<h2 class="page">1. What ClairSec does</h2>
+<p>You give ClairSec a FastAPI project (a local folder or a GitHub URL). It runs a five-stage pipeline:</p>
+<table>
+  <tr><th>Stage</th><th>Plain words</th><th>What really happens</th></tr>
+  <tr><td>Builder</td><td>Reads your app and maps every door into it.</td><td>Static route extraction + OpenAPI from the running app, test users provisioned.</td></tr>
+  <tr><td>Attacker</td><td>Tries those doors like a real attacker — safely.</td><td>Sends real requests through a scope-locked client to the sandboxed app.</td></tr>
+  <tr><td>Evaluator</td><td>Double-checks every attack with hard rules.</td><td>Deterministic oracles (code, not AI) decide; reproduces each finding; CVSS computed by code.</td></tr>
+  <tr><td>Fixer</td><td>Writes a code change that closes the door.</td><td>Unified diff applied only to a copy of the project (original never touched).</td></tr>
+  <tr><td>Verifier</td><td>Tries the attack again and checks the app still works.</td><td>Builds the patched app in its own container; three proofs: exploit blocked, app still works, endpoint preserved.</td></tr>
+</table>
+<div class="box ok"><b>The rule that makes it trustworthy:</b> AI models only <i>propose</i> tests and patches. Every verdict —
+confirmed, severity, score, "fix verified" — is computed by platform code from recorded requests and responses.</div>
+
+<h3>Key features to show</h3>
+<ul>
+  <li><b>GitHub import</b> — paste a URL; safe tarball download (size, file-count, path and symlink checks), file tree, commit SHA, import notes, and <b>exposed-secret detection</b> (API keys/tokens/passwords found, shown <i>masked</i>).</li>
+  <li><b>Autopilot</b> — one click: import → sealed container → scan → fix → verify → report.</li>
+  <li><b>Live attack timeline</b>, agent cards and <b>attack-surface map</b>.</li>
+  <li><b>Security score</b> before → after verified fixes (e.g. 55 D → 100 A), with honest "limited coverage" notes.</li>
+  <li><b>"Why you can trust this finding"</b> — the evidence chain: AI proposal → request sent → oracle fired → reproduced → CVSS → fix verified.</li>
+  <li><b>Exploit replay</b> — re-send the same attack to the original app (works, HTTP 200) and the patched app (blocked, HTTP 403).</li>
+  <li><b>Three-proof fix review</b> — exploit blocked · app still works · endpoint preserved.</li>
+  <li><b>Reports</b> — PDF, HTML, Markdown, JSON and SARIF (GitHub code scanning format); executive page + technical detail.</li>
+  <li><b>Ask ClairSec</b> (Ctrl+J) — AI assistant on every screen, grounded in recorded data, with citations; it cannot change anything.</li>
+  <li><b>Themes</b> — light/dark, 5 colour presets, responsive layout, <b>Presenter mode (F11)</b>.</li>
+</ul>
+
+<h2 class="page">2. Setup (once)</h2>
+<ol class="steps">
+  <li><b>Docker Desktop</b> — start it and wait for "Engine running".
+    If it hangs: quit Docker Desktop, run <code>wsl --shutdown</code> in PowerShell, start Docker Desktop again.</li>
+  <li><b>MongoDB</b> — the <code>clairsec-mongo</code> container (already on this PC) starts with Docker.
+    If MongoDB is not running the backend still works on <b>temporary in-memory storage</b> (badge: TEMPORARY STORAGE).</li>
+  <li><b>Backend packages</b> (already installed in <code>venv</code>):
+    <pre>cd D:\ClairSec\backend
+..\venv\Scripts\python.exe -m pip install --require-hashes -r requirements.txt</pre></li>
+  <li><b>Flutter</b>: <code>cd D:\ClairSec\desktop</code> then <code>flutter pub get</code>.</li>
+  <li><b>AI (optional)</b> — without a key ClairSec uses its offline assistant and offline AI automatically.
+    For live AI put <code>LLM_PROVIDER=anthropic</code> and <code>LLM_API_KEY=...</code> in <code>backend\.env</code>,
+    or install Ollama, <code>ollama pull &lt;model&gt;</code>, and set <code>LLM_PROVIDER=ollama</code> + <code>OLLAMA_MODEL=&lt;model&gt;</code>.</li>
+</ol>
+
+<h2>3. Start it (every time)</h2>
+<pre>:: Terminal 1 — backend
+cd D:\ClairSec\backend
+..\venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+
+:: Terminal 2 — desktop app
+cd D:\ClairSec\desktop
+flutter run -d windows</pre>
+<p>Open <b>Dashboard</b>: the readiness banner shows Backend / MongoDB / Docker / AI / Git, each with its fix.
+The top bar shows the <b>mode badge</b>:</p>
+<table>
+  <tr><th>Badge</th><th>Meaning</th></tr>
+  <tr><td>LIVE</td><td>Docker + your AI key — full pipeline in containers with a real model.</td></tr>
+  <tr><td>LIVE · LOCAL AI</td><td>Docker + Ollama model on this PC.</td></tr>
+  <tr><td>LIVE · OFFLINE AI</td><td>Docker, no AI key — containers + built-in offline AI.</td></tr>
+  <tr><td>DEMO APP</td><td>No Docker — scans ClairSec's own bundled vulnerable app (real scan, ~15 s).</td></tr>
+  <tr><td>RECORDED RUN</td><td>A real earlier scan loaded from <code>demo/bundles</code> — no Docker, no internet needed.</td></tr>
+  <tr><td>TEMPORARY STORAGE</td><td>MongoDB not reachable — results kept in memory until the backend stops.</td></tr>
+</table>
+
+<h2 class="page">4. The 7-minute presentation</h2>
+<p>Before you start: press <b>F11</b> (Presenter mode — bigger text), maximise the window, pick Light theme if the room is bright.</p>
+<table>
+  <tr><th>Time</th><th>Do</th><th>Say</th></tr>
+  <tr><td>0:00</td><td>Dashboard</td><td>"AI writes more code every day; nobody has time to pen-test it. ClairSec attacks, proves, fixes and re-proves — and no AI grades its own homework."</td></tr>
+  <tr><td>0:30</td><td>Point at banner + mode badge</td><td>"It always tells you what it is running on. Nothing on screen is faked."</td></tr>
+  <tr><td>1:00</td><td>Projects → Import → GitHub URL (section 5) → tick "authorised" → Import</td><td>"It downloads a snapshot, never runs repo code on my laptop, refuses archives that try to escape — and look, it found committed secrets, masked."</td></tr>
+  <tr><td>2:00</td><td>Project card → <b>Run full check</b> (Autopilot); open the scan</td><td>"Builder maps the doors, Attacker tries them, Evaluator checks with hard rules, Fixer patches, Verifier re-attacks."</td></tr>
+  <tr><td>3:00</td><td>Security score card</td><td>"55, grade D, before fixes — 100, grade A, after verified fixes. Computed by code, never 'secure'."</td></tr>
+  <tr><td>3:30</td><td>Open the BOLA finding → "Why you can trust this finding"</td><td>"The AI only proposes. Every verdict after that is platform code."</td></tr>
+  <tr><td>4:30</td><td><b>Replay attack</b> on Original, then Patched</td><td>"Same request, same judge. Before: leaked (200). After: blocked (403)."</td></tr>
+  <tr><td>5:30</td><td>View Fix → three proof cards</td><td>"Deleting the endpoint would 'block' the attack too — that's why the third proof exists."</td></tr>
+  <tr><td>6:00</td><td><b>Ctrl+J</b> → Explain simply → "Is the fix safe?"</td><td>"It reads only recorded data, cites its sources and can't change anything."</td></tr>
+  <tr><td>6:30</td><td>Reports → Generate → <b>Open PDF</b></td><td>"Executive page for managers, technical detail for developers, SARIF for GitHub."</td></tr>
+</table>
+<p class="small">With Docker the Autopilot run of a GitHub project takes about 1–5 minutes (container build). Start it
+before you begin talking, or use the Demo app (15 s) / a recorded run (instant) for the live part.</p>
+
+<h2 class="page">5. GitHub import — URLs that work</h2>
+<table>
+  <tr><th>URL</th><th>Sub-folder (Advanced)</th><th>What you will see</th></tr>
+  <tr><td><code>https://github.com/chiragk31/ClairSec</code></td><td><code>backend/tests/fixtures/vulnerable_fastapi_app</code></td>
+      <td><b>Best for the demo.</b> ClairSec's deliberately vulnerable shop API, imported like any user repo:
+      file tree, commit SHA, exposed-secret notes, then (with Docker) container scan → 3 confirmed vulnerabilities
+      (BOLA, mass assignment, debug config leak) → all fixed and verified → 55 → 100.</td></tr>
+  <tr><td><code>https://github.com/chiragk31/ClairSec</code></td><td><code>backend/tests/fixtures/secure_fastapi_app</code></td>
+      <td>The same API, correctly secured — "trust check": should find <b>0</b> confirmed problems.</td></tr>
+  <tr><td><code>https://github.com/tiangolo/uvicorn-gunicorn-fastapi-docker</code></td><td>(none)</td>
+      <td>A real third-party FastAPI repo (verified import: 20 files, entry point detected, editor-hook note).
+      Small app, so expect few or no findings — good to show that ClairSec does not invent problems.</td></tr>
+</table>
+<div class="box"><b>How:</b> Projects → Import → <b>GitHub URL</b> → paste the URL → (for ClairSec URLs) open the
+sub-folder field and paste the path → tick "I am authorised to test this code" → Import. Then press
+<b>Run full check</b> on the new project card. Import itself does not need Docker; scanning a GitHub project does.</div>
+
+<h2 class="page">6. Offline / no-internet / something-broke manual</h2>
+<div class="box warn"><b>Principle:</b> every fallback shows <b>real data</b> — either a real scan of ClairSec's own demo
+app, or a recording of a real earlier scan — and is always labelled with its badge. Say so if asked; it is a strength
+("it never fakes results"), not a weakness.</div>
+<table>
+  <tr><th>Situation</th><th>What still works</th><th>What to click</th></tr>
+  <tr><td>No internet</td><td>Everything except GitHub import and cloud AI.</td><td>Projects → Import → <b>Demo app</b> → Scan Demo → Run full check.</td></tr>
+  <tr><td>Docker won't start</td><td>Demo app (runs on ClairSec's built-in runner), recorded runs, reports, assistant.</td><td>Demo app as above (badge DEMO APP).</td></tr>
+  <tr><td>MongoDB down</td><td>Everything; data is temporary.</td><td>Nothing — badge TEMPORARY STORAGE appears.</td></tr>
+  <tr><td>No AI key / no internet for AI</td><td>Offline AI in scans; offline assistant answers the suggested questions.</td><td>Nothing — assistant says "Offline assistant".</td></tr>
+  <tr><td>Live scan too slow / misbehaves</td><td>Recorded run of a real Demo scan.</td><td>Scans → <b>Watch a recorded run</b> → "Demo: Vulnerable FastAPI App" → Watch.</td></tr>
+  <tr><td>Backend won't start</td><td>The PDF/HTML report you generated earlier.</td><td>Open the saved PDF from <code>workspaces\reports</code>.</td></tr>
+  <tr><td>Laptop/projector disaster</td><td>This PDF and a saved report PDF.</td><td>Present from the PDFs.</td></tr>
+</table>
+<h3>Prepare before the presentation (10 minutes)</h3>
+<ol class="steps">
+  <li>Run the Demo app once and the GitHub URL from section 5 once, so both are in scan history.</li>
+  <li>Generate a report for each and keep the PDFs open in a browser tab.</li>
+  <li>Check Scans → Watch a recorded run lists the two recordings.</li>
+  <li>Press F11, maximise the window, close other apps, disable notifications.</li>
+</ol>
+
+<h2 class="page">7. Screen-by-screen</h2>
+<table>
+  <tr><th>Screen</th><th>What it shows</th></tr>
+  <tr><td>Dashboard</td><td>Readiness banner, key numbers, recent scans, top findings.</td></tr>
+  <tr><td>Projects</td><td>Import (local folder / GitHub URL / Demo app), project cards with import notes, exposed secrets (masked), isolation controls, Run full check.</td></tr>
+  <tr><td>Scans</td><td>History; Watch a recorded run. Scan detail: mode badge, agent cards, security score, live counters, attack timeline, attack-surface map, confirmed findings.</td></tr>
+  <tr><td>Vulnerabilities</td><td>Two lanes: Confirmed vs Candidates &amp; suspicions. Finding detail: plain-words line, evidence chain, Replay attack (original vs patched), description, evidence, source location.</td></tr>
+  <tr><td>Fix Review</td><td>Diff + three proofs + variant attack + "No AI model voted on whether this fix works".</td></tr>
+  <tr><td>Reports</td><td>Generate, executive preview, Open PDF / HTML / Markdown / JSON / SARIF, Open folder, Compare with previous scan (New / Fixed / Still open / Came back).</td></tr>
+  <tr><td>Settings</td><td>Theme mode, colour preset, density, text size, reduce motion, Presenter mode.</td></tr>
+  <tr><td>Everywhere</td><td>Ctrl+K command palette, Ctrl+J Ask ClairSec, F11 presenter mode, status bar.</td></tr>
+</table>
+
+<h2>8. Ask ClairSec (AI assistant)</h2>
+<ul>
+  <li>Open with the ✦ button or <b>Ctrl+J</b>. It knows the screen you are on (scan, finding, fix…).</li>
+  <li>Tap a suggested question or type your own; switch on <b>Explain simply</b> for non-technical answers.</li>
+  <li>Answers show <b>citation chips</b> (the records used) and links you can click; it never changes anything.</li>
+  <li>Without an AI key it is the <b>Offline assistant</b> (deterministic, from recorded data). With a key it writes the prose,
+      but answers that cite nothing or claim an app "is secure" are withheld by platform code (this was caught live
+      with a small local model following an injected instruction).</li>
+</ul>
+
+<h2 class="page">9. Troubleshooting</h2>
+<table>
+  <tr><th>Symptom</th><th>Fix</th></tr>
+  <tr><td>Docker red / commands hang</td><td>Quit Docker Desktop → <code>wsl --shutdown</code> → start Docker Desktop → wait for "Engine running".</td></tr>
+  <tr><td>Backend unreachable</td><td>Start it (section 3). Port 8000 busy? Close the other process.</td></tr>
+  <tr><td>Build fails "Windows-only package"</td><td>Remove <code>pywin32</code> etc. from the project's requirements.</td></tr>
+  <tr><td>Build timeout</td><td>Set <code>DOCKER_BUILD_TIMEOUT=900</code> in <code>backend\.env</code>.</td></tr>
+  <tr><td>GitHub import fails</td><td>Check internet; check the URL and sub-folder; use Demo app.</td></tr>
+  <tr><td>Window too wide</td><td>Maximise it (double-click the title bar).</td></tr>
+  <tr><td>Anything else on stage</td><td>Demo app or Watch a recorded run (section 6).</td></tr>
+</table>
+
+<h2>10. Questions the panel may ask</h2>
+<p><b>"Isn't this just ChatGPT finding bugs?"</b> No. The LLM only proposes tests and patches; oracles (code) decide.
+Show the evidence chain on a finding.</p>
+<p><b>"How do you know the fix didn't break the app?"</b> Three proofs: the exploit is re-run and blocked, the app's checks
+still pass (its own tests, or read-only checks generated from its OpenAPI schema and compared to before the fix), and the
+route still exists. Otherwise the fix is marked regressed or unverified, never "fixed".</p>
+<p><b>"Is it safe to scan a random GitHub repo?"</b> It is downloaded as a tarball with size, file-count, path and symlink
+checks, and runs only inside a hardened container (no capabilities, read-only filesystem, internal network). Only
+ClairSec's own demo apps ever run directly.</p>
+<p><b>"What did you find in secrets?"</b> Keys committed to the repo are detected and shown masked — we never display a
+working key.</p>
+<p><b>"What is novel?"</b> Verified-fix proof (blocked + still works + endpoint kept), an injection-resistant grounded
+assistant, and a fallback chain that never fakes data.</p>
+
+<h2>11. Evidence it works (measured)</h2>
+<ul>
+  <li>Backend test suite with Docker running: <b>387 passed</b> (including 15 container integration tests).</li>
+  <li>Desktop: <b>114 widget tests passed</b>, analyzer clean; Windows app builds and was driven by an automated click-through
+      against the live backend (every screen, a recorded run, the assistant).</li>
+  <li>Live Docker run on a user project: isolation → scan → 3 fixes verified in patched containers → report; score 55 → 100;
+      replay: original HTTP 200 (attack worked), patched HTTP 403 (blocked).</li>
+  <li>Real GitHub import of a third-party repo; secret scanner finds committed keys and never stores their values.</li>
+</ul>
+<p class="small">Source of truth for developers: <code>docs/v2/</code> (PLAN, FEATURES, UI_SYSTEM, DEMO_SCRIPT, MANUAL_STEPS) and <code>docs/MEMORY.md</code>.</p>
+
+</body>
+</html>

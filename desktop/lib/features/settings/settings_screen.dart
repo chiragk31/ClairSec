@@ -90,13 +90,17 @@ class SettingsScreen extends ConsumerWidget {
                                   onTap: () => themeNotifier.setPreset(p),
                                   borderRadius: BorderRadius.circular(ClairRadius.md),
                                   child: Container(
-                                    width: 140,
+                                    // Fixed size so every tile lines up; only the selected
+                                    // tile gets the accent border (the High Contrast preset's
+                                    // own white border used to make it look selected).
+                                    width: 150,
+                                    height: 78,
                                     padding: const EdgeInsets.all(ClairSpacing.md),
                                     decoration: BoxDecoration(
                                       color: preview.surface,
                                       borderRadius: BorderRadius.circular(ClairRadius.md),
                                       border: Border.all(
-                                        color: isSelected ? preview.accent : preview.border,
+                                        color: isSelected ? tokens.accent : tokens.border,
                                         width: isSelected ? 2 : 1,
                                       ),
                                     ),
@@ -130,7 +134,11 @@ class SettingsScreen extends ConsumerWidget {
                                         ),
                                         const SizedBox(height: ClairSpacing.sm),
                                         Text(
-                                          p.label,
+                                          p == ThemePreset.values.first
+                                              ? (tokens.isDark ? 'Midnight' : 'Daylight')
+                                              : p.label,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
                                           style: TextStyle(
                                             fontSize: ClairTypography.small,
                                             fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,

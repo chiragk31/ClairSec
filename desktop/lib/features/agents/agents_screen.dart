@@ -177,10 +177,35 @@ class _AgentRoleCards extends StatelessWidget {
       ),
     ];
 
-    return Wrap(
-      spacing: ClairSpacing.md,
-      runSpacing: ClairSpacing.md,
-      children: agents,
+    // One row of equal-height cards when there is room; a wrapped grid otherwise.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const minWide = 4 * 220 + 3 * ClairSpacing.md;
+        if (constraints.maxWidth >= minWide) {
+          return IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var i = 0; i < agents.length; i++) ...[
+                  if (i > 0) const SizedBox(width: ClairSpacing.md),
+                  Expanded(child: agents[i]),
+                ],
+              ],
+            ),
+          );
+        }
+        return Wrap(
+          spacing: ClairSpacing.md,
+          runSpacing: ClairSpacing.md,
+          children: [
+            for (final a in agents)
+              ConstrainedBox(
+                constraints: const BoxConstraints(minWidth: 240, maxWidth: 240, minHeight: 190),
+                child: a,
+              ),
+          ],
+        );
+      },
     );
   }
 }
@@ -203,7 +228,6 @@ class _AgentRoleCard extends StatelessWidget {
     final tokens = context.tokens;
 
     return SizedBox(
-      width: 240,
       child: Container(
         padding: const EdgeInsets.all(ClairSpacing.lg),
         decoration: BoxDecoration(
