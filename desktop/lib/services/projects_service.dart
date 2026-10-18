@@ -15,4 +15,51 @@ class ProjectsService {
     });
     return ProjectRecord.fromJson(response.data);
   }
+
+  Future<ProjectRecord> importDemoProject({String fixture = 'vulnerable'}) async {
+    final response = await apiClient.post('/api/projects/demo', data: {
+      'fixture': fixture,
+    });
+    return ProjectRecord.fromJson(response.data);
+  }
+
+  Future<Map<String, dynamic>> importGitProject({
+    required String url,
+    String? ref,
+    String? subdir,
+    String? name,
+    required bool authorizationAffirmed,
+  }) async {
+    final response = await apiClient.post('/api/projects/import/git', data: {
+      'url': url,
+      'ref': ?ref,
+      'subdir': ?subdir,
+      'name': ?name,
+      'authorization_affirmed': authorizationAffirmed,
+    });
+    return Map<String, dynamic>.from(response.data);
+  }
+
+  Future<Map<String, dynamic>> getProjectTree(String projectId, {int depth = 3}) async {
+    final response = await apiClient.get('/api/projects/$projectId/tree?depth=$depth');
+    return Map<String, dynamic>.from(response.data);
+  }
+
+  Future<Map<String, dynamic>> startPipeline({
+    String? projectId,
+    Map<String, dynamic>? gitImport,
+    String? name,
+  }) async {
+    final response = await apiClient.post('/api/pipelines', data: {
+      'project_id': ?projectId,
+      'git_import': ?gitImport,
+      'name': ?name,
+    });
+    return Map<String, dynamic>.from(response.data);
+  }
+
+  Future<Map<String, dynamic>> getPipeline(String pipelineId) async {
+    final response = await apiClient.get('/api/pipelines/$pipelineId');
+    return Map<String, dynamic>.from(response.data);
+  }
 }

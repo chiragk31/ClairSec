@@ -1,24 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../../core/theme/app_theme.dart';
+import '../../core/theme/tokens.dart';
 import '../../models/finding.dart';
 import '../../models/scan_summary.dart';
 import '../../providers/projects_provider.dart';
 import '../../providers/findings_provider.dart';
 import '../../providers/scans_provider.dart';
+import '../../providers/readiness_provider.dart';
 import '../shared/page_header.dart';
 import '../shared/stat_card.dart';
 import '../shared/empty_state.dart';
 import '../vulnerabilities/widgets/finding_list_tile.dart';
+import 'widgets/readiness_banner.dart';
 
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final tokens = context.tokens;
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: tokens.bg,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -28,6 +31,7 @@ class DashboardScreen extends ConsumerWidget {
             actions: [
               IconButton(
                 onPressed: () {
+                  ref.invalidate(readinessProvider);
                   ref.invalidate(projectsProvider);
                   ref.invalidate(scansProvider);
                   ref.invalidate(allFindingsProvider);
@@ -39,10 +43,11 @@ class DashboardScreen extends ConsumerWidget {
           ),
           Expanded(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
+              padding: ClairInsets.allXl,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  const ReadinessBanner(),
                   const _SummaryStats(),
                   const SizedBox(height: 32),
                   Text('Recent Scans', style: Theme.of(context).textTheme.headlineMedium),
@@ -161,36 +166,42 @@ class _ScanRow extends StatelessWidget {
   final ScanSummary scan;
   const _ScanRow({required this.scan});
 
-  Color get _stateColor => switch (scan.state) {
-        ScanState.running => AppColors.accent,
-        ScanState.completed => SeverityColors.success,
-        ScanState.failed => SeverityColors.error,
-        ScanState.cancelled => AppColors.textDisabled,
-        ScanState.partial => SeverityColors.warning,
+  Color _stateColor(ClairTokens tokens) => switch (scan.state) {
+        ScanState.running => tokens.accent,
+        ScanState.completed => tokens.success,
+        ScanState.failed => tokens.critical,
+        ScanState.cancelled => tokens.textMuted,
+        ScanState.partial => tokens.warning,
       };
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    final stateColor = _stateColor(tokens);
+
     return InkWell(
       onTap: () => context.go('/scans/${scan.id}'),
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(ClairRadius.md),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding: const EdgeInsets.symmetric(
+          horizontal: ClairSpacing.lg,
+          vertical: ClairSpacing.md,
+        ),
         decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: AppColors.border),
+          color: tokens.surface,
+          borderRadius: BorderRadius.circular(ClairRadius.md),
+          border: Border.all(color: tokens.border),
         ),
         child: Row(
           children: [
-            Icon(Icons.circle, size: 8, color: _stateColor),
-            const SizedBox(width: 10),
+            Icon(Icons.circle, size: 8, color: stateColor),
+            const SizedBox(width: ClairSpacing.md - 2),
             Expanded(
               child: Text(scan.projectName, style: Theme.of(context).textTheme.bodyLarge),
             ),
             Text(
               scan.state.label,
-              style: Theme.of(context).textTheme.labelMedium?.copyWith(color: _stateColor),
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(color: stateColor),
             ),
           ],
         ),

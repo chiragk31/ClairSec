@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../core/theme/app_theme.dart';
+import '../core/theme/tokens.dart';
 
 /// Verification state of a candidate finding (PRD.md §8, SECURITY.md §11).
 /// This is about whether the finding IS a real vulnerability — not about
@@ -24,11 +24,11 @@ extension FindingStatusX on FindingStatus {
   /// Rejected is deliberately NOT rendered as "success" green — SECURITY.md
   /// §11 warns against implying "Secure" merely because a candidate was
   /// dismissed. It gets a neutral, not a reassuring, colour.
-  Color get color => switch (this) {
-        FindingStatus.candidate => AppColors.accent,
-        FindingStatus.confirmed => SeverityColors.critical,
-        FindingStatus.rejected => AppColors.textSecondary,
-        FindingStatus.inconclusive => SeverityColors.warning,
+  Color color(ClairTokens tokens) => switch (this) {
+        FindingStatus.candidate => tokens.accent,
+        FindingStatus.confirmed => tokens.critical,
+        FindingStatus.rejected => tokens.textSecondary,
+        FindingStatus.inconclusive => tokens.warning,
       };
 }
 
@@ -64,14 +64,14 @@ extension RemediationStatusX on RemediationStatus {
         RemediationStatus.verificationUnavailable => Icons.help_outline,
       };
 
-  Color get color => switch (this) {
-        RemediationStatus.notStarted => AppColors.textDisabled,
-        RemediationStatus.fixProposed => AppColors.accent,
-        RemediationStatus.fixApplied => AppColors.accent,
-        RemediationStatus.fixVerified => SeverityColors.success,
-        RemediationStatus.fixFailed => SeverityColors.error,
-        RemediationStatus.regressed => SeverityColors.error,
-        RemediationStatus.verificationUnavailable => SeverityColors.warning,
+  Color color(ClairTokens tokens) => switch (this) {
+        RemediationStatus.notStarted => tokens.textMuted,
+        RemediationStatus.fixProposed => tokens.accent,
+        RemediationStatus.fixApplied => tokens.accent,
+        RemediationStatus.fixVerified => tokens.success,
+        RemediationStatus.fixFailed => tokens.critical,
+        RemediationStatus.regressed => tokens.warning,
+        RemediationStatus.verificationUnavailable => tokens.warning,
       };
 }
 
@@ -85,9 +85,7 @@ extension ConfidenceLevelX on ConfidenceLevel {
       };
 }
 
-/// Severity band. Re-derives the same colour mapping [StatCard] uses
-/// (`SeverityColors`) rather than importing its private `SeverityLevel`
-/// enum, since this model belongs to findings specifically.
+/// Severity band. Re-derives the semantic token mapping rather than importing AppColors.
 enum FindingSeverity { critical, high, medium, low, informational }
 
 extension FindingSeverityX on FindingSeverity {
@@ -107,12 +105,12 @@ extension FindingSeverityX on FindingSeverity {
         FindingSeverity.informational => Icons.circle_outlined,
       };
 
-  Color get color => switch (this) {
-        FindingSeverity.critical => SeverityColors.critical,
-        FindingSeverity.high => SeverityColors.high,
-        FindingSeverity.medium => SeverityColors.medium,
-        FindingSeverity.low => SeverityColors.low,
-        FindingSeverity.informational => SeverityColors.informational,
+  Color color(ClairTokens tokens) => switch (this) {
+        FindingSeverity.critical => tokens.critical,
+        FindingSeverity.high => tokens.high,
+        FindingSeverity.medium => tokens.medium,
+        FindingSeverity.low => tokens.low,
+        FindingSeverity.informational => tokens.info,
       };
 }
 
@@ -157,6 +155,7 @@ class Finding {
   final String impact;
   final bool runtimeConfirmed;
   final FindingStatus status;
+  final bool hasOracleEvidence;
   final String? statusReason;
   final String? evidenceSummary;
   final String? reproductionSummary;
@@ -179,6 +178,7 @@ class Finding {
     required this.runtimeConfirmed,
     required this.status,
     required this.createdAt,
+    this.hasOracleEvidence = true,
     this.statusReason,
     this.evidenceSummary,
     this.reproductionSummary,
@@ -186,7 +186,21 @@ class Finding {
     this.remediationStatus = RemediationStatus.notStarted,
   });
 
+  bool get isConfirmed =>
+      status == FindingStatus.confirmed && runtimeConfirmed && hasOracleEvidence;
+
   factory Finding.fromJson(Map<String, dynamic> json) {
+    final hasOracleRaw = json['hasOracleEvidence'] ?? json['has_oracle_evidence'];
+    final bool hasOracle = hasOracleRaw != null
+        ? (hasOracleRaw as bool)
+        : ((json['oracle_result'] != null ||
+            json['oracle_evaluation'] != null ||
+            (json['oracle_rule_id'] != null &&
+                json['oracle_rule_id'].toString().isNotEmpty) ||
+            (json['status'] == 'confirmed' &&
+                (json['runtimeConfirmed'] == true ||
+                    json['runtime_confirmed'] == true))));
+
     return Finding(
       id: json['id'] as String,
       scanId: (json['scanId'] ?? json['scan_id'] ?? '') as String,
@@ -203,6 +217,7 @@ class Finding {
       runtimeConfirmed:
           (json['runtimeConfirmed'] ?? json['runtime_confirmed'] ?? false) as bool,
       status: _statusFrom(json['status'] as String?),
+      hasOracleEvidence: hasOracle,
       statusReason: (json['statusReason'] ?? json['status_reason']) as String?,
       evidenceSummary:
           (json['evidenceSummary'] ?? json['evidence_summary']) as String?,

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/theme/tokens.dart';
 import '../../../providers/isolation_provider.dart';
 import 'run_scan_button.dart';
 
@@ -111,65 +112,79 @@ class _IsolationControlsState extends ConsumerState<IsolationControls> {
     final statusAsync = ref.watch(isolationStatusProvider(widget.projectId));
     final service = ref.read(isolationServiceProvider);
 
+    final tokens = context.tokens;
     return statusAsync.when(
       loading: () => const _StatusLine(text: 'Checking isolation status…'),
-      error: (err, _) => _StatusLine(text: 'Status unavailable', color: SeverityColors.warning),
+      error: (err, _) => _StatusLine(text: 'Status unavailable', color: tokens.warning),
       data: (status) {
         final state = status.state;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: ClairSpacing.md,
+              runSpacing: ClairSpacing.xs,
               children: [
-                Icon(state.icon, size: 14, color: state.color),
-                const SizedBox(width: 6),
-                Text(
-                  state.label,
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(color: state.color),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(state.icon, size: 14, color: state.color(tokens)),
+                    const SizedBox(width: ClairSpacing.xs + 2),
+                    Text(
+                      state.label,
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(color: state.color(tokens)),
+                    ),
+                    if (_busy) ...[
+                      const SizedBox(width: ClairSpacing.md),
+                      const SizedBox(
+                        width: 12,
+                        height: 12,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      const SizedBox(width: ClairSpacing.sm),
+                      Text(
+                        _stage ?? 'working…',
+                        style: Theme.of(context).textTheme.labelSmall,
+                      ),
+                    ],
+                  ],
                 ),
-                if (_busy) ...[
-                  const SizedBox(width: 12),
-                  const SizedBox(
-                    width: 12,
-                    height: 12,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    _stage ?? 'working…',
-                    style: Theme.of(context).textTheme.labelSmall,
-                  ),
-                ],
-                const Spacer(),
-                if (!_busy && state.canIsolate && widget.isolationReady)
-                  FilledButton.icon(
-                    onPressed: _startIsolation,
-                    icon: const Icon(Icons.play_arrow, size: 15),
-                    label: const Text('Isolate'),
-                  ),
-                if (!_busy && state.canStop) ...[
-                  OutlinedButton.icon(
-                    onPressed: () => _runAction(() => service.stop(widget.projectId)),
-                    icon: const Icon(Icons.stop, size: 15),
-                    label: const Text('Stop'),
-                  ),
-                  const SizedBox(width: 8),
-                  OutlinedButton.icon(
-                    onPressed: () => _runAction(() => service.cleanup(widget.projectId)),
-                    icon: const Icon(Icons.delete_outline, size: 15),
-                    label: const Text('Clean up'),
-                  ),
-                ],
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (!_busy && state.canIsolate && widget.isolationReady)
+                      FilledButton.icon(
+                        onPressed: _startIsolation,
+                        icon: const Icon(Icons.play_arrow, size: 15),
+                        label: const Text('Isolate'),
+                      ),
+                    if (!_busy && state.canStop) ...[
+                      OutlinedButton.icon(
+                        onPressed: () => _runAction(() => service.stop(widget.projectId)),
+                        icon: const Icon(Icons.stop, size: 15),
+                        label: const Text('Stop'),
+                      ),
+                      const SizedBox(width: ClairSpacing.sm),
+                      OutlinedButton.icon(
+                        onPressed: () => _runAction(() => service.cleanup(widget.projectId)),
+                        icon: const Icon(Icons.delete_outline, size: 15),
+                        label: const Text('Clean up'),
+                      ),
+                    ],
+                  ],
+                ),
               ],
             ),
             if (status.containerName != null && state.canStop) ...[
               const SizedBox(height: 6),
               Text(
                 'Container: ${status.containerName}',
-                style: AppTheme.monoStyle(fontSize: 11, color: AppColors.textDisabled),
+                style: AppTheme.monoStyle(fontSize: ClairTypography.caption, color: tokens.textMuted),
               ),
             ],
-            const SizedBox(height: 12),
+            const SizedBox(height: ClairSpacing.md),
             RunScanButton(
               projectId: widget.projectId,
               enabled: !_busy && state.canStop,
@@ -196,12 +211,13 @@ class _StatusLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
     return Text(
       text,
       style: Theme.of(context)
           .textTheme
           .labelMedium
-          ?.copyWith(color: color ?? AppColors.textDisabled),
+          ?.copyWith(color: color ?? tokens.textMuted),
     );
   }
 }
@@ -266,15 +282,16 @@ class _ErrorBoxState extends State<_ErrorBox> {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
     final (headline, diagnosis, log) = _parse();
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(ClairSpacing.md),
       decoration: BoxDecoration(
-        color: SeverityColors.error.withValues(alpha: 0.07),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: SeverityColors.error.withValues(alpha: 0.3)),
+        color: tokens.critical.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(ClairRadius.sm),
+        border: Border.all(color: tokens.critical.withValues(alpha: 0.3)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -282,29 +299,29 @@ class _ErrorBoxState extends State<_ErrorBox> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(Icons.error_outline,
-                  size: 15, color: SeverityColors.error),
-              const SizedBox(width: 8),
+              Icon(Icons.error_outline,
+                  size: 15, color: tokens.critical),
+              const SizedBox(width: ClairSpacing.sm),
               Expanded(
                 child: Text(
                   headline.isEmpty ? 'Isolation failed' : headline,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: SeverityColors.error,
+                        color: tokens.critical,
                         fontWeight: FontWeight.w600,
                       ),
                 ),
               ),
               InkWell(
                 onTap: _copy,
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: BorderRadius.circular(ClairRadius.sm / 2),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  padding: ClairInsets.x6Y2,
                   child: Text(
                     _copied ? 'Copied' : 'Copy',
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
                           color: _copied
-                              ? SeverityColors.success
-                              : AppColors.textSecondary,
+                              ? tokens.success
+                              : tokens.textSecondary,
                         ),
                   ),
                 ),
@@ -314,23 +331,23 @@ class _ErrorBoxState extends State<_ErrorBox> {
 
           // The actionable part — what to actually do about it.
           if (diagnosis != null) ...[
-            const SizedBox(height: 10),
+            const SizedBox(height: ClairSpacing.md - 2),
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(10),
+              padding: ClairInsets.compactCard,
               decoration: BoxDecoration(
-                color: SeverityColors.warning.withValues(alpha: 0.10),
-                borderRadius: BorderRadius.circular(5),
+                color: tokens.warning.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(ClairRadius.sm),
                 border: Border.all(
-                  color: SeverityColors.warning.withValues(alpha: 0.35),
+                  color: tokens.warning.withValues(alpha: 0.35),
                 ),
               ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.lightbulb_outline,
-                      size: 14, color: SeverityColors.warning),
-                  const SizedBox(width: 8),
+                  Icon(Icons.lightbulb_outline,
+                      size: 14, color: tokens.warning),
+                  const SizedBox(width: ClairSpacing.sm),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -339,7 +356,7 @@ class _ErrorBoxState extends State<_ErrorBox> {
                           'Likely cause',
                           style:
                               Theme.of(context).textTheme.labelSmall?.copyWith(
-                                    color: SeverityColors.warning,
+                                    color: tokens.warning,
                                     fontWeight: FontWeight.w700,
                                   ),
                         ),
@@ -357,21 +374,21 @@ class _ErrorBoxState extends State<_ErrorBox> {
           ],
 
           if (log != null && log.isNotEmpty) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: ClairSpacing.sm),
             InkWell(
               onTap: () => setState(() => _expanded = !_expanded),
-              borderRadius: BorderRadius.circular(4),
+              borderRadius: BorderRadius.circular(ClairRadius.sm / 2),
               child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
+                padding: const EdgeInsets.symmetric(vertical: ClairSpacing.xs),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
                       _expanded ? Icons.expand_less : Icons.expand_more,
                       size: 16,
-                      color: AppColors.textSecondary,
+                      color: tokens.textSecondary,
                     ),
-                    const SizedBox(width: 4),
+                    const SizedBox(width: ClairSpacing.xs),
                     Text(
                       _expanded ? 'Hide build log' : 'Show build log',
                       style: Theme.of(context).textTheme.labelSmall,
@@ -384,11 +401,11 @@ class _ErrorBoxState extends State<_ErrorBox> {
               Container(
                 width: double.infinity,
                 constraints: const BoxConstraints(maxHeight: 260),
-                padding: const EdgeInsets.all(10),
+                padding: ClairInsets.compactCard,
                 decoration: BoxDecoration(
-                  color: AppColors.background,
-                  borderRadius: BorderRadius.circular(5),
-                  border: Border.all(color: AppColors.border),
+                  color: tokens.bg,
+                  borderRadius: BorderRadius.circular(ClairRadius.sm),
+                  border: Border.all(color: tokens.border),
                 ),
                 child: SingleChildScrollView(
                   child: SingleChildScrollView(
@@ -396,8 +413,8 @@ class _ErrorBoxState extends State<_ErrorBox> {
                     child: Text(
                       log,
                       style: AppTheme.monoStyle(
-                        fontSize: 11,
-                        color: AppColors.textSecondary,
+                        fontSize: ClairTypography.caption,
+                        color: tokens.textSecondary,
                       ),
                       softWrap: false,
                     ),

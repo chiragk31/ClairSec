@@ -8,6 +8,15 @@ class ProjectRecord {
   final String? dependencyFile;
   final List<String> dependencies;
   final bool isolationReady;
+  final String importSource;
+  final String? commitSha;
+  final List<String> importNotes;
+
+  /// Credentials found committed in the code: type, file, line and a masked preview.
+  final List<Map<String, dynamic>> exposedSecrets;
+  final List<Map<String, dynamic>> monorepoCandidates;
+  final int fileCount;
+  final int repoSizeBytes;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -21,6 +30,13 @@ class ProjectRecord {
     this.dependencyFile,
     required this.dependencies,
     required this.isolationReady,
+    this.importSource = 'local',
+    this.commitSha,
+    this.importNotes = const [],
+    this.exposedSecrets = const [],
+    this.monorepoCandidates = const [],
+    this.fileCount = 0,
+    this.repoSizeBytes = 0,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -36,6 +52,17 @@ class ProjectRecord {
       dependencyFile: json['dependency_file'] as String?,
       dependencies: List<String>.from(json['dependencies'] ?? []),
       isolationReady: json['isolation_ready'] as bool? ?? false,
+      importSource: json['import_source'] as String? ?? 'local',
+      commitSha: json['commit_sha'] as String?,
+      importNotes: List<String>.from(json['import_notes'] ?? []),
+      exposedSecrets: (json['exposed_secrets'] as List<dynamic>? ?? [])
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList(),
+      monorepoCandidates: (json['monorepo_candidates'] as List<dynamic>? ?? [])
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList(),
+      fileCount: json['file_count'] as int? ?? 0,
+      repoSizeBytes: json['repo_size_bytes'] as int? ?? 0,
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(json['updated_at'] as String),
     );

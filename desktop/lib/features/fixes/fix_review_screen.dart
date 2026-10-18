@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/theme/tokens.dart';
 import '../../models/finding.dart';
 import '../../models/patch.dart';
 import '../../providers/findings_provider.dart';
@@ -28,11 +29,12 @@ class FixReviewScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final tokens = context.tokens;
     final finding = ref.watch(findingByIdProvider(findingId));
     final patch = ref.watch(patchForFindingProvider(findingId));
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: tokens.bg,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -43,7 +45,7 @@ class FixReviewScreen extends ConsumerWidget {
           Expanded(
             child: finding == null
                 ? const Padding(
-                    padding: EdgeInsets.all(24),
+                    padding: ClairInsets.allXl,
                     child: EmptyState(
                       icon: Icons.search_off_outlined,
                       title: 'Finding not found',
@@ -75,7 +77,7 @@ class _SplitLayout extends StatelessWidget {
 
         if (!isWide) {
           return SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
+            padding: ClairInsets.allXl,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [left, const SizedBox(height: 24), right],
@@ -89,7 +91,7 @@ class _SplitLayout extends StatelessWidget {
             Expanded(
               flex: 4,
               child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(24, 24, 12, 24),
+                padding: ClairInsets.leftSplit,
                 child: left,
               ),
             ),
@@ -97,7 +99,7 @@ class _SplitLayout extends StatelessWidget {
             Expanded(
               flex: 6,
               child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(12, 24, 24, 24),
+                padding: ClairInsets.rightSplit,
                 child: right,
               ),
             ),
@@ -114,31 +116,32 @@ class _VulnerabilityPane extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _PaneTitle(icon: Icons.gpp_bad_outlined, text: 'Vulnerability'),
-        const SizedBox(height: 12),
+        const _PaneTitle(icon: Icons.gpp_bad_outlined, text: 'Vulnerability'),
+        const SizedBox(height: ClairSpacing.md),
         Wrap(
-          spacing: 8,
-          runSpacing: 8,
+          spacing: ClairSpacing.sm,
+          runSpacing: ClairSpacing.sm,
           children: [
             SeverityPill(severity: finding.severity),
             FindingStatusBadge(status: finding.status),
-            RuntimeConfirmationBadge(runtimeConfirmed: finding.runtimeConfirmed),
+            RuntimeConfirmationBadge.forFinding(finding),
           ],
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: ClairSpacing.md),
         Text(
           '${finding.method}  ${finding.routeTemplate}',
-          style: AppTheme.monoStyle(fontSize: 12, color: AppColors.accent),
+          style: AppTheme.monoStyle(fontSize: ClairTypography.small, color: tokens.accent),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: ClairSpacing.xs),
         Text(
           '${finding.category} · ${finding.cwe}',
           style: Theme.of(context).textTheme.bodySmall,
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: ClairSpacing.xl),
         _Block(title: 'What it is', body: finding.description),
         _Block(title: 'Impact', body: finding.impact),
         if (finding.statusReason != null)
@@ -197,18 +200,18 @@ class _FixPane extends StatelessWidget {
           Text(
             'Source diff',
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  color: AppColors.textSecondary,
+                  color: context.tokens.textSecondary,
                   letterSpacing: 0.5,
                 ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: ClairSpacing.sm),
           for (final f in p.files) ...[
             DiffViewer(fileDiff: f),
-            const SizedBox(height: 12),
+            const SizedBox(height: ClairSpacing.md),
           ],
           if (p.applyError != null)
             _Block(title: 'Apply error', body: p.applyError!, mono: true),
-          const SizedBox(height: 8),
+          const SizedBox(height: ClairSpacing.sm),
           Text(
             p.applied
                 ? 'Applied to the isolated workspace only — your original project is untouched.'
@@ -227,21 +230,22 @@ class _ValidationBadges extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
     Widget chip(String label, bool ok) => Padding(
-          padding: const EdgeInsets.only(left: 8),
+          padding: const EdgeInsets.only(left: ClairSpacing.sm),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
                 ok ? Icons.check_circle_outline : Icons.cancel_outlined,
                 size: 12,
-                color: ok ? SeverityColors.success : SeverityColors.error,
+                color: ok ? tokens.success : tokens.critical,
               ),
-              const SizedBox(width: 4),
+              const SizedBox(width: ClairSpacing.xs),
               Text(
                 label,
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: ok ? SeverityColors.success : SeverityColors.error,
+                      color: ok ? tokens.success : tokens.critical,
                     ),
               ),
             ],
@@ -266,10 +270,11 @@ class _PaneTitle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
     return Row(
       children: [
-        Icon(icon, size: 17, color: AppColors.textSecondary),
-        const SizedBox(width: 8),
+        Icon(icon, size: 17, color: tokens.textSecondary),
+        const SizedBox(width: ClairSpacing.sm),
         Text(text, style: Theme.of(context).textTheme.headlineLarge),
       ],
     );
@@ -285,31 +290,32 @@ class _Block extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 18),
+      padding: const EdgeInsets.only(bottom: ClairSpacing.lg),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             title,
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  color: AppColors.textSecondary,
+                  color: tokens.textSecondary,
                   letterSpacing: 0.5,
                 ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: ClairSpacing.xs + 2),
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(ClairSpacing.md),
             decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: AppColors.border),
+              color: tokens.surface,
+              borderRadius: BorderRadius.circular(ClairRadius.md),
+              border: Border.all(color: tokens.border),
             ),
             child: Text(
               body,
               style: mono
-                  ? AppTheme.monoStyle(fontSize: 12)
+                  ? AppTheme.monoStyle(fontSize: ClairTypography.small)
                   : Theme.of(context).textTheme.bodyLarge,
             ),
           ),

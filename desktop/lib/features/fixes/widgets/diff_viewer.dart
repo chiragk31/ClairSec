@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/theme/tokens.dart';
 import '../../../models/patch.dart';
 
 /// Renders a unified diff with colour-coded additions/removals.
@@ -15,11 +16,13 @@ class DiffViewer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
+
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.background,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.border),
+        color: tokens.bg,
+        borderRadius: BorderRadius.circular(ClairRadius.md),
+        border: Border.all(color: tokens.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -27,22 +30,25 @@ class DiffViewer extends StatelessWidget {
           // File header
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: const BoxDecoration(
-              color: AppColors.surfaceVariant,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(7)),
+            padding: const EdgeInsets.symmetric(
+              horizontal: ClairSpacing.md,
+              vertical: ClairSpacing.sm,
+            ),
+            decoration: BoxDecoration(
+              color: tokens.surfaceRaised,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(ClairRadius.md - 1)),
             ),
             child: Row(
               children: [
-                const Icon(Icons.insert_drive_file_outlined,
-                    size: 13, color: AppColors.textSecondary),
-                const SizedBox(width: 6),
+                Icon(Icons.insert_drive_file_outlined,
+                    size: 13, color: tokens.textSecondary),
+                const SizedBox(width: ClairSpacing.xs),
                 Expanded(
                   child: Text(
                     fileDiff.path,
                     style: AppTheme.monoStyle(
-                      fontSize: 12,
-                      color: AppColors.textPrimary,
+                      fontSize: ClairTypography.small,
+                      color: tokens.textPrimary,
                       fontWeight: FontWeight.w600,
                     ),
                     overflow: TextOverflow.ellipsis,
@@ -53,7 +59,6 @@ class DiffViewer extends StatelessWidget {
             ),
           ),
           // Diff body — horizontally scrollable so long lines never wrap
-          // (wrapped code is unreadable and misrepresents the patch).
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: ConstrainedBox(
@@ -95,27 +100,28 @@ class _CopyDiffButtonState extends State<_CopyDiffButton> {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
+
     return Tooltip(
       message: _copied ? 'Copied' : 'Copy diff',
       child: InkWell(
         onTap: _copy,
-        borderRadius: BorderRadius.circular(4),
+        borderRadius: BorderRadius.circular(ClairRadius.sm),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+          padding: ClairInsets.x6Y3,
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
                 _copied ? Icons.check : Icons.copy_all_outlined,
                 size: 13,
-                color: _copied ? SeverityColors.success : AppColors.textSecondary,
+                color: _copied ? tokens.success : tokens.textSecondary,
               ),
-              const SizedBox(width: 4),
+              const SizedBox(width: ClairSpacing.xs),
               Text(
                 _copied ? 'Copied' : 'Copy',
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color:
-                          _copied ? SeverityColors.success : AppColors.textSecondary,
+                      color: _copied ? tokens.success : tokens.textSecondary,
                     ),
               ),
             ],
@@ -130,27 +136,25 @@ class _DiffLineRow extends StatelessWidget {
   final DiffLine line;
   const _DiffLineRow({required this.line});
 
-  static const _addBg = Color(0x2643D68C);
-  static const _removeBg = Color(0x26FF3B3B);
-  static const _hunkBg = Color(0x1A58A6FF);
-
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
+
     final (bg, fg) = switch (line.kind) {
-      DiffLineKind.addition => (_addBg, SeverityColors.success),
-      DiffLineKind.removal => (_removeBg, SeverityColors.critical),
-      DiffLineKind.hunk => (_hunkBg, AppColors.accent),
-      DiffLineKind.meta => (Colors.transparent, AppColors.textDisabled),
-      DiffLineKind.context => (Colors.transparent, AppColors.textSecondary),
+      DiffLineKind.addition => (tokens.diffAddBg, tokens.success),
+      DiffLineKind.removal => (tokens.diffRemoveBg, tokens.critical),
+      DiffLineKind.hunk => (tokens.diffHunkBg, tokens.accent),
+      DiffLineKind.meta => (Colors.transparent, tokens.textMuted),
+      DiffLineKind.context => (Colors.transparent, tokens.textSecondary),
     };
 
     return Container(
       width: double.infinity,
       color: bg,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 1.5),
+      padding: ClairInsets.diffLine,
       child: Text(
         line.text.isEmpty ? ' ' : line.text,
-        style: AppTheme.monoStyle(fontSize: 12, color: fg),
+        style: AppTheme.monoStyle(fontSize: ClairTypography.small, color: fg),
         softWrap: false,
       ),
     );
@@ -164,27 +168,29 @@ class DiffStatsChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
+
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
           '+${stats.added}',
           style: AppTheme.monoStyle(
-            fontSize: 12,
-            color: SeverityColors.success,
+            fontSize: ClairTypography.small,
+            color: tokens.success,
             fontWeight: FontWeight.w600,
           ),
         ),
-        const SizedBox(width: 6),
+        const SizedBox(width: ClairSpacing.sm),
         Text(
           '−${stats.removed}',
           style: AppTheme.monoStyle(
-            fontSize: 12,
-            color: SeverityColors.critical,
+            fontSize: ClairTypography.small,
+            color: tokens.critical,
             fontWeight: FontWeight.w600,
           ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: ClairSpacing.sm),
         Text(
           '${stats.files} file${stats.files == 1 ? '' : 's'}',
           style: Theme.of(context).textTheme.labelSmall,

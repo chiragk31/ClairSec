@@ -1,48 +1,36 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:file_picker/file_picker.dart' as fp;
-import '../../core/theme/app_theme.dart';
+import '../../core/theme/tokens.dart';
 import '../../models/project.dart';
 import '../../providers/projects_provider.dart';
 import '../shared/page_header.dart';
 import '../shared/empty_state.dart';
+import 'widgets/autopilot_dialog.dart';
+import 'widgets/import_project_dialog.dart';
 import 'widgets/isolation_controls.dart';
 
 class ProjectsScreen extends ConsumerWidget {
   const ProjectsScreen({super.key});
 
   Future<void> _handleImport(BuildContext context, WidgetRef ref) async {
-    final String? selectedDirectory = await fp.FilePicker.getDirectoryPath(
-      dialogTitle: 'Select FastAPI Project Folder',
+    final imported = await showDialog<bool>(
+      context: context,
+      builder: (_) => const ImportProjectDialog(),
     );
-
-    if (selectedDirectory != null) {
-      try {
-        await ref.read(projectsProvider.notifier).importProject(selectedDirectory);
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Project imported successfully')),
-          );
-        }
-      } catch (e) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Failed to import project: $e'),
-              backgroundColor: SeverityColors.error,
-            ),
-          );
-        }
-      }
+    if (imported == true && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Project imported successfully')),
+      );
     }
   }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final tokens = context.tokens;
     final projectsAsync = ref.watch(projectsProvider);
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: tokens.bg,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -61,40 +49,31 @@ class ProjectsScreen extends ConsumerWidget {
             child: projectsAsync.when(
               data: (projects) {
                 if (projects.isEmpty) {
-                  return Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: EmptyState(
-                      icon: Icons.folder_open_outlined,
-                      title: 'No projects imported',
-                      description:
-                          'Import a local FastAPI project to begin. ClairSec will validate '
-                          'the project, create an isolated scan workspace, and run a '
-                          'controlled security assessment.',
-                      action: FilledButton.icon(
-                        onPressed: () => _handleImport(context, ref),
-                        icon: const Icon(Icons.add, size: 16),
-                        label: const Text('Import Project'),
-                      ),
+                  return EmptyState(
+                    icon: Icons.folder_open,
+                    title: 'No projects imported',
+                    description: 'Import a FastAPI project to begin vulnerability scanning.',
+                    action: FilledButton.icon(
+                      onPressed: () => _handleImport(context, ref),
+                      icon: const Icon(Icons.add, size: 16),
+                      label: const Text('Import Project'),
                     ),
                   );
                 }
+
                 return ListView.separated(
-                  padding: const EdgeInsets.all(24),
+                  padding: const EdgeInsets.all(ClairSpacing.xl),
                   itemCount: projects.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 16),
-                  itemBuilder: (context, index) => _ProjectCard(project: projects[index]),
+                  separatorBuilder: (context, index) => const SizedBox(height: ClairSpacing.lg),
+                  itemBuilder: (context, index) {
+                    final project = projects[index];
+                    return _ProjectCard(project: project);
+                  },
                 );
               },
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (err, stack) => Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: EmptyState(
-                    icon: Icons.error_outline,
-                    title: 'Error loading projects',
-                    description: err.toString(),
-                  ),
-                ),
+                child: Text('Error loading projects: $err'),
               ),
             ),
           ),
@@ -111,52 +90,63 @@ class _ProjectCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
     final isValid = project.validationStatus == 'valid';
 
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(ClairSpacing.lg),
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.border),
+        color: tokens.surface,
+        borderRadius: BorderRadius.circular(ClairRadius.md),
+        border: Border.all(color: tokens.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: ClairSpacing.sm,
+            runSpacing: ClairSpacing.xs,
             children: [
-              Icon(
-                isValid ? Icons.check_circle : Icons.error,
-                color: isValid ? SeverityColors.success : SeverityColors.error,
-                size: 20,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  project.name,
-                  style: AppTheme.dark.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    isValid ? Icons.check_circle : Icons.error,
+                    color: isValid ? tokens.success : tokens.critical,
+                    size: 20,
                   ),
-                ),
+                  const SizedBox(width: ClairSpacing.sm),
+                  Text(
+                    project.name,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
               ),
               if (project.isolationReady)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: ClairSpacing.sm, vertical: ClairSpacing.xs),
                   decoration: BoxDecoration(
-                    color: SeverityColors.success.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(4),
-                    border: Border.all(color: SeverityColors.success.withValues(alpha: 0.3)),
+                    color: tokens.success.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(ClairRadius.sm),
+                    border: Border.all(color: tokens.success.withValues(alpha: 0.3)),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.shield_outlined, size: 12, color: SeverityColors.success),
-                      const SizedBox(width: 4),
-                      Text(
-                        'Appears ready for isolation',
-                        style: AppTheme.dark.textTheme.labelSmall?.copyWith(
-                          color: SeverityColors.success,
-                          fontWeight: FontWeight.w600,
+                      Icon(Icons.shield_outlined, size: 12, color: tokens.success),
+                      const SizedBox(width: ClairSpacing.xs),
+                      Flexible(
+                        child: Text(
+                          'Ready for isolation',
+                          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: tokens.success,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ],
@@ -164,17 +154,17 @@ class _ProjectCard extends StatelessWidget {
                 ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: ClairSpacing.sm),
           Text(
             project.sourcePath,
-            style: AppTheme.dark.textTheme.bodySmall?.copyWith(
-              color: AppColors.textSecondary,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: tokens.textSecondary,
               fontFamily: 'JetBrainsMono',
             ),
           ),
-          const SizedBox(height: 16),
-          const Divider(height: 1),
-          const SizedBox(height: 16),
+          const SizedBox(height: ClairSpacing.lg),
+          Divider(height: 1, color: tokens.border),
+          const SizedBox(height: ClairSpacing.lg),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -196,53 +186,150 @@ class _ProjectCard extends StatelessWidget {
               ),
             ],
           ),
-          if (isValid) ...[
-            const SizedBox(height: 16),
-            const Divider(height: 1),
-            const SizedBox(height: 12),
-            IsolationControls(
-              projectId: project.id,
-              isolationReady: project.isolationReady,
-            ),
-          ],
-          if (!isValid && project.validationErrors.isNotEmpty) ...[
-            const SizedBox(height: 16),
+          if (project.importNotes.isNotEmpty) ...[
+            const SizedBox(height: ClairSpacing.md),
             Container(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(ClairSpacing.md),
               decoration: BoxDecoration(
-                color: SeverityColors.error.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: SeverityColors.error.withValues(alpha: 0.3)),
+                color: tokens.info.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(ClairRadius.sm),
+                border: Border.all(color: tokens.info.withValues(alpha: 0.3)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.warning_amber_rounded, size: 16, color: SeverityColors.error),
-                      const SizedBox(width: 8),
+                      Icon(Icons.info_outline, size: 14, color: tokens.info),
+                      const SizedBox(width: ClairSpacing.xs),
+                      Text(
+                        'Import Notes',
+                        style: TextStyle(
+                          fontSize: ClairTypography.caption,
+                          fontWeight: FontWeight.w600,
+                          color: tokens.info,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: ClairSpacing.xs),
+                  for (final note in project.importNotes)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: ClairSpacing.xxs),
+                      child: Text(
+                        '• $note',
+                        style: TextStyle(
+                          fontSize: ClairTypography.caption,
+                          color: tokens.textSecondary,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+          if (project.exposedSecrets.isNotEmpty) ...[
+            const SizedBox(height: ClairSpacing.md),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(ClairSpacing.md),
+              decoration: BoxDecoration(
+                color: tokens.danger.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(ClairRadius.sm),
+                border: Border.all(color: tokens.danger.withValues(alpha: 0.35)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.key_off, size: 14, color: tokens.danger),
+                      const SizedBox(width: ClairSpacing.xs),
+                      Expanded(
+                        child: Text(
+                          'Exposed secrets (${project.exposedSecrets.length}) — values masked, rotate them',
+                          style: TextStyle(
+                            fontSize: ClairTypography.caption,
+                            fontWeight: FontWeight.w600,
+                            color: tokens.danger,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: ClairSpacing.xs),
+                  for (final s in project.exposedSecrets.take(8))
+                    Text(
+                      '${s['type']} · ${s['file']}:${s['line']} · ${s['preview']}',
+                      style: TextStyle(fontSize: ClairTypography.caption, color: tokens.textSecondary),
+                    ),
+                ],
+              ),
+            ),
+          ],
+          if (isValid) ...[
+            const SizedBox(height: ClairSpacing.lg),
+            Divider(height: 1, color: tokens.border),
+            const SizedBox(height: ClairSpacing.md),
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: ClairSpacing.md,
+              runSpacing: ClairSpacing.sm,
+              children: [
+                FilledButton.icon(
+                  onPressed: () => showDialog(
+                    context: context,
+                    builder: (_) => AutopilotDialog(project: project),
+                  ),
+                  icon: const Icon(Icons.bolt, size: 16),
+                  label: const Text('Run full check'),
+                ),
+                IsolationControls(
+                  projectId: project.id,
+                  isolationReady: project.isolationReady,
+                ),
+              ],
+            ),
+          ],
+          if (!isValid && project.validationErrors.isNotEmpty) ...[
+            const SizedBox(height: ClairSpacing.lg),
+            Container(
+              padding: const EdgeInsets.all(ClairSpacing.md),
+              decoration: BoxDecoration(
+                color: tokens.critical.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(ClairRadius.sm),
+                border: Border.all(color: tokens.critical.withValues(alpha: 0.3)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.warning_amber_rounded, size: 16, color: tokens.critical),
+                      const SizedBox(width: ClairSpacing.sm),
                       Text(
                         'Validation Failed',
-                        style: AppTheme.dark.textTheme.titleSmall?.copyWith(
-                          color: SeverityColors.error,
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          color: tokens.critical,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: ClairSpacing.sm),
                   ...project.validationErrors.map(
                     (err) => Padding(
-                      padding: const EdgeInsets.only(bottom: 4),
+                      padding: const EdgeInsets.only(bottom: ClairSpacing.xs),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('• ', style: TextStyle(color: SeverityColors.error)),
+                          Text('• ', style: TextStyle(color: tokens.critical)),
                           Expanded(
                             child: Text(
                               err,
-                              style: AppTheme.dark.textTheme.bodySmall?.copyWith(
-                                color: SeverityColors.error,
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: tokens.critical,
                               ),
                             ),
                           ),
@@ -273,20 +360,22 @@ class _InfoSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           title,
-          style: AppTheme.dark.textTheme.labelSmall?.copyWith(
-            color: AppColors.textDisabled,
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: tokens.textMuted,
           ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: ClairSpacing.xs),
         Text(
           content,
-          style: AppTheme.dark.textTheme.bodyMedium?.copyWith(
-            color: isError ? SeverityColors.error : AppColors.textPrimary,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: isError ? tokens.critical : tokens.textPrimary,
             fontWeight: FontWeight.w500,
           ),
         ),

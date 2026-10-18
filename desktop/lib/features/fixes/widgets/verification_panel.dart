@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/theme/tokens.dart';
 import '../../../models/patch.dart';
 
 /// Displays the dual-criterion proof that a fix actually works.
@@ -17,19 +18,20 @@ class VerificationPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
     final verified = proof.fullyVerified;
     final accent = verified
-        ? SeverityColors.success
+        ? tokens.success
         : (proof.outcome == 'regressed'
-            ? SeverityColors.error
-            : SeverityColors.warning);
+            ? tokens.critical
+            : tokens.warning);
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(ClairSpacing.lg),
       decoration: BoxDecoration(
         color: accent.withValues(alpha: 0.07),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(ClairRadius.md),
         border: Border.all(color: accent.withValues(alpha: 0.35)),
       ),
       child: Column(
@@ -42,7 +44,7 @@ class VerificationPanel extends StatelessWidget {
                 size: 18,
                 color: accent,
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: ClairSpacing.sm),
               Expanded(
                 child: Text(
                   verified
@@ -61,7 +63,7 @@ class VerificationPanel extends StatelessWidget {
                 ),
             ],
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: ClairSpacing.md + 2),
 
           // Criterion 1 — the exploit no longer works.
           _Criterion(
@@ -73,29 +75,43 @@ class VerificationPanel extends StatelessWidget {
                     ? 'The exploit still succeeds against the patched build.'
                     : 'The same attack was re-run against the rebuilt target and no '
                         'longer succeeds.')
-                : 'The exploit could not be re-run.',
+                : 'Exploit was not re-executed.',
           ),
 
-          // Criterion 2 — nothing legitimate broke. This is the half that is
-          // usually omitted, and the half that makes the first half meaningful.
+          // Criterion 2 — the app still works (functional behaviour preserved).
           _Criterion(
-            passed: proof.functionalityIntact,
+            passed: proof.suitePassed,
             ran: proof.suiteRan,
-            title: 'Functionality preserved',
+            title: proof.suiteSource == 'auto_smoke'
+                ? 'App still works (auto-generated tests)'
+                : 'App still works (test suite)',
             detail: proof.suiteRan
-                ? (proof.failed == 0
-                    ? "All ${proof.passed} of the application's own functional "
-                        'tests still pass — the fix did not break legitimate behaviour.'
-                    : '${proof.failed} previously passing test(s) now fail: '
-                        '${proof.newlyFailing.join(", ")}')
-                : 'The functional test suite could not be run.',
+                ? (proof.brokenTests.isEmpty
+                    ? (proof.suiteSource == 'auto_smoke'
+                        ? "All ${proof.total} read-only checks generated from the app's own API "
+                            'description behave as they did before the fix.'
+                        : 'All ${proof.total} project tests passed — no existing behaviour broken.')
+                    : '${proof.brokenTests.length} check(s) broke: ${proof.brokenTests.join(", ")}')
+                : (proof.suiteDetail.isNotEmpty
+                    ? proof.suiteDetail
+                    : 'No functional checks ran, so this fix cannot be marked verified.'),
           ),
 
-          // Robustness — did it fix the class, or just this one path?
+          // Criterion 3 — the endpoint was not simply deleted.
           _Criterion(
-            passed: proof.variantRan && !proof.variantExploited,
+            passed: proof.endpointPreserved,
+            ran: proof.endpointCheckRan,
+            title: 'Endpoint preserved',
+            detail: proof.endpointDetail.isNotEmpty
+                ? proof.endpointDetail
+                : 'The route table of the patched code could not be read statically.',
+          ),
+
+          // Extra depth — variant attack blocked (optional).
+          _Criterion(
+            passed: proof.variantBlocked,
             ran: proof.variantRan,
-            title: 'Withstands an adapted attack',
+            title: 'Variant attack blocked',
             detail: proof.variantRan
                 ? (proof.variantExploited
                     ? 'A variant of the same attack still succeeds — the specific '
@@ -106,13 +122,18 @@ class VerificationPanel extends StatelessWidget {
             optional: true,
           ),
 
+          Text(
+            'Every check above is platform code re-running real requests. '
+            'No AI model voted on whether this fix works.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: tokens.textSecondary),
+          ),
           if (proof.outcomeReason.isNotEmpty) ...[
-            const SizedBox(height: 10),
+            const SizedBox(height: ClairSpacing.sm + 2),
             Text(
               proof.outcomeReason,
               style: AppTheme.monoStyle(
-                fontSize: 11,
-                color: AppColors.textDisabled,
+                fontSize: ClairTypography.caption,
+                color: tokens.textMuted,
               ),
             ),
           ],
@@ -142,21 +163,22 @@ class _Criterion extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
     final (icon, color) = switch ((ran, passed)) {
-      (false, _) => (Icons.remove_circle_outline, AppColors.textDisabled),
-      (true, true) => (Icons.check_circle_outline, SeverityColors.success),
+      (false, _) => (Icons.remove_circle_outline, tokens.textMuted),
+      (true, true) => (Icons.check_circle_outline, tokens.success),
       (true, false) => optional
-          ? (Icons.info_outline, SeverityColors.warning)
-          : (Icons.cancel_outlined, SeverityColors.error),
+          ? (Icons.info_outline, tokens.warning)
+          : (Icons.cancel_outlined, tokens.critical),
     };
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: ClairSpacing.md),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(icon, size: 16, color: color),
-          const SizedBox(width: 10),
+          const SizedBox(width: ClairSpacing.md - 2),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,

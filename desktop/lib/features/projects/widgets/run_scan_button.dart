@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/theme/tokens.dart';
 import '../../../models/scan_summary.dart';
 import '../../../providers/scans_provider.dart';
 import '../../../providers/findings_provider.dart';
@@ -116,18 +117,18 @@ class _RunScanButtonState extends ConsumerState<RunScanButton> {
           ],
         ),
         if (_error != null) ...[
-          const SizedBox(height: 8),
+          const SizedBox(height: ClairSpacing.sm),
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.all(10),
+            padding: ClairInsets.compactCard,
             decoration: BoxDecoration(
-              color: SeverityColors.error.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: SeverityColors.error.withValues(alpha: 0.3)),
+              color: context.tokens.critical.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(ClairRadius.sm),
+              border: Border.all(color: context.tokens.critical.withValues(alpha: 0.3)),
             ),
             child: Text(
               _error!,
-              style: AppTheme.monoStyle(fontSize: 11, color: SeverityColors.error),
+              style: AppTheme.monoStyle(fontSize: ClairTypography.caption, color: context.tokens.critical),
             ),
           ),
         ],

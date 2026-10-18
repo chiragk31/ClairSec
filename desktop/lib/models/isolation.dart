@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../core/theme/app_theme.dart';
+import '../core/theme/tokens.dart';
 
 /// Mirrors the backend `IsolationStatus` enum (Phase 3).
 enum IsolationState {
@@ -41,14 +41,14 @@ enum IsolationState {
         IsolationState.unknown => Icons.help_outline,
       };
 
-  Color get color => switch (this) {
-        IsolationState.pending => AppColors.textDisabled,
-        IsolationState.building => AppColors.accent,
-        IsolationState.ready => SeverityColors.success,
-        IsolationState.running => SeverityColors.success,
-        IsolationState.stopped => AppColors.textSecondary,
-        IsolationState.importFailed => SeverityColors.error,
-        IsolationState.unknown => AppColors.textDisabled,
+  Color color(ClairTokens tokens) => switch (this) {
+        IsolationState.pending => tokens.textMuted,
+        IsolationState.building => tokens.accent,
+        IsolationState.ready => tokens.success,
+        IsolationState.running => tokens.success,
+        IsolationState.stopped => tokens.textSecondary,
+        IsolationState.importFailed => tokens.critical,
+        IsolationState.unknown => tokens.textMuted,
       };
 
   /// Isolation can be started from these states.

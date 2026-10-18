@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../../core/theme/app_theme.dart';
+import '../../../core/theme/tokens.dart';
 import '../../../models/scan_detail.dart';
 
 /// One of the four pipeline cards on the live scan screen (DESIGN.md §6).
@@ -12,15 +12,18 @@ class AgentCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
     final status = state.status;
+    final statusColor = status.color(tokens);
+
     return Container(
       width: 220,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(ClairSpacing.lg),
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(8),
+        color: tokens.surface,
+        borderRadius: BorderRadius.circular(ClairRadius.md),
         border: Border.all(
-          color: status == AgentStatus.running ? status.color : AppColors.border,
+          color: status == AgentStatus.running ? statusColor : tokens.border,
           width: status == AgentStatus.running ? 1.5 : 1,
         ),
       ),
@@ -29,8 +32,8 @@ class AgentCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(state.role.icon, size: 16, color: AppColors.textSecondary),
-              const SizedBox(width: 8),
+              Icon(state.role.icon, size: 16, color: tokens.textSecondary),
+              const SizedBox(width: ClairSpacing.sm),
               Expanded(
                 child: Text(
                   state.role.label,
@@ -40,25 +43,25 @@ class AgentCard extends StatelessWidget {
               _StatusPill(status: status),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: ClairSpacing.md),
           Text(
             state.currentTask ?? 'Waiting for scan to reach this stage',
             style: Theme.of(context).textTheme.bodySmall,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: ClairSpacing.md),
           if (state.progress != null) ...[
             ClipRRect(
-              borderRadius: BorderRadius.circular(3),
+              borderRadius: BorderRadius.circular(ClairRadius.sm / 2),
               child: LinearProgressIndicator(
                 value: state.progress!.clamp(0.0, 1.0),
                 minHeight: 4,
-                backgroundColor: AppColors.surfaceVariant,
-                valueColor: AlwaysStoppedAnimation(status.color),
+                backgroundColor: tokens.surfaceRaised,
+                valueColor: AlwaysStoppedAnimation(statusColor),
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: ClairSpacing.md - 2),
           ],
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -92,24 +95,27 @@ class _StatusPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    final color = status.color(tokens);
+
     return Tooltip(
       message: status.label,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        padding: ClairInsets.xSmY3,
         decoration: BoxDecoration(
-          color: status.color.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(4),
-          border: Border.all(color: status.color.withValues(alpha: 0.4)),
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(ClairRadius.sm),
+          border: Border.all(color: color.withValues(alpha: 0.4)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(status.icon, size: 11, color: status.color),
-            const SizedBox(width: 4),
+            Icon(status.icon, size: 11, color: color),
+            const SizedBox(width: ClairSpacing.xs),
             Text(
               status.label,
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: status.color,
+                    color: color,
                   ),
             ),
           ],
@@ -126,11 +132,13 @@ class _InlineStat extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
+
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 12, color: AppColors.textDisabled),
-        const SizedBox(width: 4),
+        Icon(icon, size: 12, color: tokens.textMuted),
+        const SizedBox(width: ClairSpacing.xs),
         Text(text, style: Theme.of(context).textTheme.labelSmall),
       ],
     );

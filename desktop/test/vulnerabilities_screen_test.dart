@@ -90,7 +90,7 @@ void main() {
     // legend also renders "Critical" and "High" as labels.
     expect(find.text('Critical'), findsWidgets);
     expect(find.text('High'), findsWidgets);
-    expect(find.text('Runtime confirmed'), findsNWidgets(2));
+    expect(find.text('Runtime-confirmed · oracle-verified'), findsNWidgets(2));
   });
 
   testWidgets('tapping a finding navigates to its detail screen', (tester) async {

@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/finding.dart';
+import '../services/scans_service.dart';
 import 'scans_provider.dart';
 
 /// Findings for a single scan — `GET /api/scans/{id}/findings`.
@@ -43,4 +44,16 @@ final findingByIdProvider = Provider.family<Finding?, String>((ref, id) {
     if (f.id == id) return f;
   }
   return null;
+});
+
+/// Evidence chain of custody for one finding (FEATURES.md F7).
+final findingProvenanceProvider =
+    FutureProvider.family<FindingProvenance, String>((ref, findingId) async {
+  return ref.read(scansServiceProvider).getProvenance(findingId);
+});
+
+/// Attack-surface tree for one scan (FEATURES.md F10).
+final scanSurfaceProvider =
+    FutureProvider.family<AttackSurface, String>((ref, scanId) async {
+  return ref.read(scansServiceProvider).getSurface(scanId);
 });

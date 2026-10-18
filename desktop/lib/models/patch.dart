@@ -93,6 +93,15 @@ class VerificationProof {
   final bool variantExploited;
   final String variantKind;
 
+  /// "fixture_suite" | "auto_smoke" | "none" — which suite proved "App still works".
+  final String suiteSource;
+  final String suiteDetail;
+
+  /// Third proof (F9): the vulnerable route still exists after the fix.
+  final bool endpointCheckRan;
+  final bool endpointPreserved;
+  final String endpointDetail;
+
   final double durationSeconds;
 
   const VerificationProof({
@@ -110,6 +119,11 @@ class VerificationProof {
     required this.variantExploited,
     required this.variantKind,
     required this.durationSeconds,
+    this.suiteSource = 'fixture_suite',
+    this.suiteDetail = '',
+    this.endpointCheckRan = false,
+    this.endpointPreserved = false,
+    this.endpointDetail = '',
   });
 
   static VerificationProof? fromJson(Map<String, dynamic>? json) {
@@ -117,6 +131,7 @@ class VerificationProof {
     final exploit = (json['originalExploit'] as Map<String, dynamic>?) ?? const {};
     final suite = (json['functionalSuite'] as Map<String, dynamic>?) ?? const {};
     final variant = (json['variantAttack'] as Map<String, dynamic>?) ?? const {};
+    final endpoint = (json['endpointPreserved'] as Map<String, dynamic>?) ?? const {};
 
     return VerificationProof(
       outcome: json['outcome'] as String? ?? 'unverified',
@@ -137,6 +152,11 @@ class VerificationProof {
       variantKind: variant['variantKind'] as String? ?? '',
       durationSeconds:
           (json['durationSeconds'] as num?)?.toDouble() ?? 0.0,
+      suiteSource: suite['source'] as String? ?? 'fixture_suite',
+      suiteDetail: suite['detail'] as String? ?? '',
+      endpointCheckRan: endpoint['ran'] as bool? ?? false,
+      endpointPreserved: endpoint['preserved'] as bool? ?? false,
+      endpointDetail: endpoint['detail'] as String? ?? '',
     );
   }
 
@@ -146,8 +166,21 @@ class VerificationProof {
   /// Nothing that previously worked is now broken.
   bool get functionalityIntact => suiteRan && failed == 0;
 
-  /// Both halves of the dual criterion hold.
-  bool get fullyVerified => exploitBlocked && functionalityIntact;
+  /// Application test suite passes without broken tests.
+  bool get suitePassed => suiteRan && failed == 0 && newlyFailing.isEmpty;
+
+  /// Broken tests list.
+  List<String> get brokenTests => newlyFailing;
+
+  /// Variant attack blocked.
+  bool get variantBlocked => variantRan && !variantExploited;
+
+  /// The fix did not delete the endpoint (unknown when static extraction was impossible).
+  bool? get endpointKept => endpointCheckRan ? endpointPreserved : null;
+
+  /// Both halves of the dual criterion hold, and the endpoint was not removed.
+  bool get fullyVerified =>
+      exploitBlocked && functionalityIntact && (endpointKept ?? true);
 }
 
 /// A generated fix — the Fixer's proposed patch for one finding

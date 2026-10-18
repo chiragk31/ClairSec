@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../core/theme/app_theme.dart';
+import '../core/theme/tokens.dart';
 
 /// The four pipeline agents, in execution order.
 enum AgentRole { builder, attacker, evaluator, fixer }
@@ -42,12 +42,12 @@ extension AgentStatusX on AgentStatus {
         AgentStatus.skipped => Icons.remove_circle_outline,
       };
 
-  Color get color => switch (this) {
-        AgentStatus.idle => AppColors.textDisabled,
-        AgentStatus.running => AppColors.accent,
-        AgentStatus.completed => SeverityColors.success,
-        AgentStatus.failed => SeverityColors.error,
-        AgentStatus.skipped => AppColors.textDisabled,
+  Color color(ClairTokens tokens) => switch (this) {
+        AgentStatus.idle => tokens.textMuted,
+        AgentStatus.running => tokens.running,
+        AgentStatus.completed => tokens.success,
+        AgentStatus.failed => tokens.danger,
+        AgentStatus.skipped => tokens.textMuted,
       };
 }
 

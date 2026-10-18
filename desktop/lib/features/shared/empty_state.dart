@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../../core/theme/app_theme.dart';
+import '../../../core/theme/tokens.dart';
 
 /// Consistent empty-state widget shown when a section has no data yet.
 class EmptyState extends StatelessWidget {
@@ -18,33 +18,40 @@ class EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
+
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 48, horizontal: 24),
+      padding: const EdgeInsets.symmetric(
+        vertical: ClairSpacing.xxxl,
+        horizontal: ClairSpacing.xl,
+      ),
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.border),
+        color: tokens.surface,
+        borderRadius: BorderRadius.circular(ClairRadius.md),
+        border: Border.all(color: tokens.border),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 40, color: AppColors.textDisabled),
-          const SizedBox(height: 16),
+          Icon(icon, size: 40, color: tokens.textMuted),
+          const SizedBox(height: ClairSpacing.lg),
           Text(
             title,
             style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  color: AppColors.textSecondary,
+                  color: tokens.textSecondary,
                 ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: ClairSpacing.sm),
           Text(
             description,
-            style: Theme.of(context).textTheme.bodyMedium,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: tokens.textMuted,
+                ),
             textAlign: TextAlign.center,
           ),
           if (action != null) ...[
-            const SizedBox(height: 20),
+            const SizedBox(height: ClairSpacing.xl),
             action!,
           ],
         ],

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../../core/theme/app_theme.dart';
+import '../../../core/theme/tokens.dart';
 
 class PageHeader extends StatelessWidget {
   final String title;
@@ -15,35 +15,76 @@ class PageHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
+
     return Container(
-      padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
-      decoration: const BoxDecoration(
-        color: AppColors.surface,
-        border: Border(bottom: BorderSide(color: AppColors.border)),
+      padding: const EdgeInsets.fromLTRB(
+        ClairSpacing.xl,
+        ClairSpacing.lg,
+        ClairSpacing.xl,
+        ClairSpacing.lg,
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Expanded(
-            child: Column(
+      decoration: BoxDecoration(
+        color: tokens.surface,
+        border: Border(bottom: BorderSide(color: tokens.border)),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isNarrow = constraints.maxWidth < 450;
+          if (isNarrow && actions != null && actions!.isNotEmpty) {
+            return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   title,
-                  style: Theme.of(context).textTheme.displayMedium,
+                  style: Theme.of(context).textTheme.headlineLarge,
                 ),
                 if (subtitle != null) ...[
-                  const SizedBox(height: 4),
+                  const SizedBox(height: ClairSpacing.xs),
                   Text(
                     subtitle!,
-                    style: Theme.of(context).textTheme.bodyMedium,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: tokens.textSecondary,
+                        ),
                   ),
                 ],
+                const SizedBox(height: ClairSpacing.md),
+                Wrap(
+                  spacing: ClairSpacing.sm,
+                  runSpacing: ClairSpacing.xs,
+                  children: actions!,
+                ),
               ],
-            ),
-          ),
-          ...?actions,
-        ],
+            );
+          }
+
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: Theme.of(context).textTheme.headlineLarge,
+                    ),
+                    if (subtitle != null) ...[
+                      const SizedBox(height: ClairSpacing.xs),
+                      Text(
+                        subtitle!,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: tokens.textSecondary,
+                            ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              ...?actions,
+            ],
+          );
+        },
       ),
     );
   }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/theme/tokens.dart';
 import '../../../models/finding.dart';
 import 'status_badges.dart';
 
@@ -13,15 +14,17 @@ class FindingListTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
+
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(ClairRadius.md),
       child: Container(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(ClairSpacing.lg),
         decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: AppColors.border),
+          color: tokens.surface,
+          borderRadius: BorderRadius.circular(ClairRadius.md),
+          border: Border.all(color: tokens.border),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -38,24 +41,24 @@ class FindingListTile extends StatelessWidget {
                 SeverityPill(severity: finding.severity),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: ClairSpacing.sm),
             Row(
               children: [
-                Icon(Icons.route_outlined, size: 13, color: AppColors.textDisabled),
-                const SizedBox(width: 4),
+                Icon(Icons.route_outlined, size: 13, color: tokens.textMuted),
+                const SizedBox(width: ClairSpacing.xs),
                 Text(
                   '${finding.method}  ${finding.routeTemplate}',
-                  style: AppTheme.monoStyle(fontSize: 12, color: AppColors.textSecondary),
+                  style: AppTheme.monoStyle(fontSize: ClairTypography.small, color: tokens.textSecondary),
                 ),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: ClairSpacing.md),
             Wrap(
-              spacing: 8,
-              runSpacing: 8,
+              spacing: ClairSpacing.sm,
+              runSpacing: ClairSpacing.sm,
               children: [
                 FindingStatusBadge(status: finding.status),
-                RuntimeConfirmationBadge(runtimeConfirmed: finding.runtimeConfirmed),
+                RuntimeConfirmationBadge.forFinding(finding),
                 RemediationStatusBadge(status: finding.remediationStatus),
               ],
             ),

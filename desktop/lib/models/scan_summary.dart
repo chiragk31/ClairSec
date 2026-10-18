@@ -1,3 +1,5 @@
+import 'posture.dart';
+
 /// Coarse scan state for list/summary views (dashboard, scan history).
 /// Mirrors the terminal/non-terminal states in ARCHITECTURE.md §5 — this is
 /// intentionally a smaller vocabulary than the full agent-by-agent state
@@ -35,6 +37,12 @@ class ScanSummary {
   final int fixesVerified;
   final Map<String, double> stageDurations;
 
+  /// Experience mode the scan ran in: live, demo, recorded, ... (FEATURES.md F4).
+  final String mode;
+
+  /// Posture score computed by the backend; null until evaluation finishes.
+  final Posture? posture;
+
   const ScanSummary({
     required this.id,
     required this.projectName,
@@ -52,6 +60,8 @@ class ScanSummary {
     this.fixesGenerated = 0,
     this.fixesVerified = 0,
     this.stageDurations = const {},
+    this.mode = 'live',
+    this.posture,
   });
 
   factory ScanSummary.fromJson(Map<String, dynamic> json) {
@@ -103,6 +113,8 @@ class ScanSummary {
           counters?['fixes_verified'] ??
           0) as int,
       stageDurations: durations,
+      mode: (json['mode'] as String?) ?? 'live',
+      posture: Posture.tryParse(json['posture']),
       startedAt: DateTime.tryParse((json['startedAt'] ??
                   json['started_at'] ??
                   json['createdAt'] ??
@@ -125,4 +137,9 @@ class ScanSummary {
       state == ScanState.failed ||
       state == ScanState.cancelled ||
       state == ScanState.partial;
+
+  int get findingsCount =>
+      findingsConfirmed > 0 ? findingsConfirmed : findingsDiscovered;
+
+  int get fixesAppliedCount => fixesVerified;
 }

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,6 +13,7 @@ import '../../features/fixes/fix_review_screen.dart';
 import '../../features/agents/agents_screen.dart';
 import '../../features/reports/reports_screen.dart';
 import '../../features/settings/settings_screen.dart';
+import '../../features/gallery/gallery_screen.dart';
 import '../shell/app_shell.dart';
 
 // ---------------------------------------------------------------------------
@@ -30,12 +32,14 @@ class AppRoutes {
   static const String reports = '/reports';
   static const String research = '/research';
   static const String settings = '/settings';
+  static const String fixes = '/fixes';
+  static const String gallery = '/_gallery';
 }
 
 // ---------------------------------------------------------------------------
-// Router provider
+// Router factory and provider
 // ---------------------------------------------------------------------------
-final routerProvider = Provider<GoRouter>((ref) {
+GoRouter createRouter({bool isDebug = kDebugMode}) {
   return GoRouter(
     initialLocation: AppRoutes.dashboard,
     debugLogDiagnostics: false,
@@ -82,6 +86,12 @@ final routerProvider = Provider<GoRouter>((ref) {
             ),
           ),
           GoRoute(
+            path: AppRoutes.fixes,
+            pageBuilder: (context, state) => const NoTransitionPage(
+              child: VulnerabilitiesScreen(),
+            ),
+          ),
+          GoRoute(
             path: '/fixes/:findingId',
             pageBuilder: (context, state) => NoTransitionPage(
               child: FixReviewScreen(
@@ -113,11 +123,22 @@ final routerProvider = Provider<GoRouter>((ref) {
               child: SettingsScreen(),
             ),
           ),
+          if (isDebug)
+            GoRoute(
+              path: AppRoutes.gallery,
+              pageBuilder: (context, state) => const NoTransitionPage(
+                child: GalleryScreen(),
+              ),
+            ),
         ],
       ),
     ],
     errorBuilder: (context, state) => _RouteErrorPage(error: state.error),
   );
+}
+
+final routerProvider = Provider<GoRouter>((ref) {
+  return createRouter();
 });
 
 class _RouteErrorPage extends StatelessWidget {
