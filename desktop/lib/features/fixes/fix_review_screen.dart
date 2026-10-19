@@ -209,8 +209,10 @@ class _FixPane extends StatelessWidget {
             DiffViewer(fileDiff: f),
             const SizedBox(height: ClairSpacing.md),
           ],
-          if (p.applyError != null)
+          if (p.applyError != null) ...[
+            _Block(title: 'Why the fix failed', body: _explainApplyError(p.applyError!)),
             _Block(title: 'Apply error', body: p.applyError!, mono: true),
+          ],
           const SizedBox(height: ClairSpacing.sm),
           Text(
             p.applied
@@ -323,4 +325,27 @@ class _Block extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Plain-language reason for a patch that could not be applied. Honest: a failed
+/// patch is reported as failed, never shown as fixed.
+String _explainApplyError(String error) {
+  if (error.startsWith('diff_apply_error')) {
+    return 'The proposed patch did not match this project\'s source code (its context '
+        'lines differ), so it was not applied. The offline Fixer ships ready-made patches '
+        'for the demo project; for other projects connect an AI provider (Settings → '
+        'LLM Provider) so it can write a patch against the real file, then re-run the scan.';
+  }
+  if (error.startsWith('hallucinated_path')) {
+    return 'The patch pointed at a file that does not exist in the project, so it was '
+        'rejected before touching anything.';
+  }
+  if (error == 'patch_generation_failed') {
+    return 'No patch could be generated for this kind of finding. Connect an LLM provider '
+        'in Settings, or fix it by hand using the root cause above.';
+  }
+  if (error.startsWith('path_') || error.startsWith('symlink')) {
+    return 'The patch tried to write outside the isolated workspace and was blocked.';
+  }
+  return 'The patch could not be applied to the isolated copy of the project.';
 }

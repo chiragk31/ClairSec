@@ -23,7 +23,7 @@ class VulnerabilitiesScreen extends ConsumerWidget {
         children: [
           PageHeader(
             title: 'Vulnerabilities',
-            subtitle: 'Confirmed findings across all scans',
+            subtitle: 'Findings across all scans, grouped by project',
             actions: [
               IconButton(
                 onPressed: () {
@@ -58,10 +58,23 @@ class _VulnerabilitiesContentState
   /// Active lane: 0 = Confirmed vulnerabilities (feeds score), 1 = Candidates & suspicions.
   int _selectedLane = 0;
 
+  /// null = every project. Otherwise only findings from this project.
+  String? _projectFilter;
+
   @override
   Widget build(BuildContext context) {
-    final all = ref.watch(findingsProvider);
     final tokens = context.tokens;
+    final scans = ref.watch(scansProvider).asData?.value ?? const [];
+    final projectByScan = {for (final s in scans) s.id: s.projectName};
+    String projectOf(Finding f) => projectByScan[f.scanId] ?? 'Unknown project';
+    final everything = ref.watch(findingsProvider);
+    final projectCounts = <String, int>{};
+    for (final f in everything) {
+      projectCounts.update(projectOf(f), (n) => n + 1, ifAbsent: () => 1);
+    }
+    final all = _projectFilter == null
+        ? everything
+        : everything.where((f) => projectOf(f) == _projectFilter).toList();
 
     final confirmed = all.where((f) => f.isConfirmed).toList();
     final candidates = all.where((f) => !f.isConfirmed).toList();
@@ -78,6 +91,32 @@ class _VulnerabilitiesContentState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Which project the findings belong to — the first thing users look for.
+          if (projectCounts.isNotEmpty) ...[
+            Wrap(
+              spacing: ClairSpacing.sm,
+              runSpacing: ClairSpacing.sm,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Icon(Icons.folder_outlined, size: 16, color: tokens.textMuted),
+                _FilterChip(
+                  label: 'All projects (${everything.length})',
+                  active: _projectFilter == null,
+                  color: tokens.accent,
+                  onTap: () => setState(() => _projectFilter = null),
+                ),
+                for (final e in projectCounts.entries)
+                  _FilterChip(
+                    label: '${e.key} (${e.value})',
+                    active: _projectFilter == e.key,
+                    color: tokens.accent,
+                    onTap: () => setState(
+                        () => _projectFilter = _projectFilter == e.key ? null : e.key),
+                  ),
+              ],
+            ),
+            const SizedBox(height: ClairSpacing.lg),
+          ],
           // Severity legend row — paired icon + label per DESIGN.md rule
           const _SeverityLegend(),
           const SizedBox(height: ClairSpacing.lg),
@@ -145,18 +184,61 @@ class _VulnerabilitiesContentState
                             : 'No findings match the current filter. Clear it to see '
                                 'all ${activePool.length} recorded findings in this lane.'),
                   )
-                : ListView.separated(
-                    itemCount: visible.length,
-                    separatorBuilder: (context, i) => const SizedBox(height: ClairSpacing.md),
-                    itemBuilder: (context, i) {
-                      final f = visible[i];
-                      return FindingListTile(
-                        finding: f,
-                        onTap: () => context.go('/vulnerabilities/${f.id}'),
-                      );
-                    },
+                : ListView(
+                    children: [
+                      for (final group in _groupByProject(visible, projectOf).entries) ...[
+                        _ProjectHeader(name: group.key, count: group.value.length),
+                        for (final f in group.value) ...[
+                          FindingListTile(
+                            finding: f,
+                            onTap: () => context.go('/vulnerabilities/${f.id}'),
+                          ),
+                          const SizedBox(height: ClairSpacing.md),
+                        ],
+                        const SizedBox(height: ClairSpacing.sm),
+                      ],
+                    ],
                   ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+Map<String, List<Finding>> _groupByProject(
+    List<Finding> findings, String Function(Finding) projectOf) {
+  final groups = <String, List<Finding>>{};
+  for (final f in findings) {
+    groups.putIfAbsent(projectOf(f), () => []).add(f);
+  }
+  return groups;
+}
+
+class _ProjectHeader extends StatelessWidget {
+  const _ProjectHeader({required this.name, required this.count});
+
+  final String name;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: ClairSpacing.sm),
+      child: Row(
+        children: [
+          Icon(Icons.folder_outlined, size: 18, color: tokens.accent),
+          const SizedBox(width: ClairSpacing.sm),
+          Flexible(
+            child: Text(
+              name,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+          ),
+          const SizedBox(width: ClairSpacing.sm),
+          Text('($count)', style: TextStyle(color: tokens.textMuted)),
         ],
       ),
     );

@@ -73,6 +73,18 @@ class PostureCard extends StatelessWidget {
                           color: p.improved ? tokens.success : tokens.textPrimary,
                         ),
                       ),
+                      if (p.before == p.after) ...[
+                        const SizedBox(height: ClairSpacing.xs),
+                        Text(
+                          p.moves.isEmpty
+                              ? 'Unchanged because no vulnerability was runtime-confirmed in '
+                                  'this scan, so there was nothing to fix. Scan a vulnerable '
+                                  'project (e.g. demo-vulnerable) to see the score move.'
+                              : 'Unchanged because no fix has been verified yet — a score only '
+                                  'improves when the Verifier proves the exploit is blocked.',
+                          style: TextStyle(color: tokens.warning),
+                        ),
+                      ],
                       const SizedBox(height: ClairSpacing.sm),
                       if (p.limitedCoverage)
                         Padding(

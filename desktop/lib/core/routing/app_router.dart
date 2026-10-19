@@ -10,6 +10,7 @@ import '../../features/scans/scan_detail_screen.dart';
 import '../../features/vulnerabilities/vulnerabilities_screen.dart';
 import '../../features/vulnerabilities/finding_detail_screen.dart';
 import '../../features/fixes/fix_review_screen.dart';
+import '../../features/fixes/fixes_screen.dart';
 import '../../features/agents/agents_screen.dart';
 import '../../features/reports/reports_screen.dart';
 import '../../features/settings/settings_screen.dart';
@@ -88,7 +89,7 @@ GoRouter createRouter({bool isDebug = kDebugMode}) {
           GoRoute(
             path: AppRoutes.fixes,
             pageBuilder: (context, state) => const NoTransitionPage(
-              child: VulnerabilitiesScreen(),
+              child: FixesScreen(),
             ),
           ),
           GoRoute(

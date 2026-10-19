@@ -116,13 +116,19 @@ class _ScanDetailContent extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              for (final role in AgentRole.values)
-                AgentCard(state: state.cardFor(role)),
-            ],
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final role in AgentRole.values) ...[
+                    if (role != AgentRole.values.first) const SizedBox(width: 12),
+                    AgentCard(state: state.cardFor(role)),
+                  ],
+                ],
+              ),
+            ),
           ),
           const SizedBox(height: 24),
           PostureCard(
