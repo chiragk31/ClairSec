@@ -81,6 +81,8 @@ def test_dockerfile_nested_entrypoint_posix_and_app_dir():
         ws = Path(td)
         entry_point = "docker-images\\app\\main.py"
         dep_file = "docker-images\\requirements.txt"
+        (ws / "docker-images").mkdir()
+        (ws / "docker-images" / "requirements.txt").write_text("fastapi\n")
 
         manager._write_dockerfile(
             workspace_path=ws,

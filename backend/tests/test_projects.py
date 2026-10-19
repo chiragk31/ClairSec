@@ -62,10 +62,12 @@ class TestFastAPIValidator:
         from app.services.fastapi_validator import validate_fastapi_project
         (tmp_path / "main.py").write_text("from fastapi import FastAPI\napp = FastAPI()")
         result = validate_fastapi_project(str(tmp_path))
-        # Valid entry point found, but no dep file → isolation_ready=False
+        # Valid entry point, no manifest: still isolation-ready, because the sandbox
+        # build infers the dependencies from the project's imports.
         assert result.is_valid is True
-        assert result.isolation_ready is False
+        assert result.isolation_ready is True
         assert result.dependency_file is None
+        assert any("infer" in e for e in result.errors)
 
     def test_pyproject_toml_parsed(self, tmp_path):
         from app.services.fastapi_validator import validate_fastapi_project
@@ -174,3 +176,44 @@ def test_import_rejects_empty_or_relative_path(authed_client):
     for bad in ("", "   ", "relative/folder", "."):
         r = authed_client.post("/api/projects", json={"path": bad})
         assert r.status_code == 422, (bad, r.status_code, r.text)
+
+
+
+def test_entry_detection_skips_venv_and_prefers_real_app(tmp_path):
+    from app.services.fastapi_validator import validate_fastapi_project
+
+    venv = tmp_path / ".venv" / "Lib" / "site-packages" / "fastapi"
+    venv.mkdir(parents=True)
+    (tmp_path / ".venv" / "pyvenv.cfg").write_text("home = x\n")
+    for i in range(250):  # a committed virtualenv used to exhaust the scan budget
+        (venv / f"m{i}.py").write_text("from fastapi import FastAPI\napp = FastAPI()\n")
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "conftest.py").write_text("from fastapi import FastAPI\napp = FastAPI()\n")
+    (tmp_path / "src" / "shop").mkdir(parents=True)
+    (tmp_path / "src" / "shop" / "main.py").write_text(
+        "from fastapi import FastAPI\napp = FastAPI()\napp.include_router(r)\n")
+    (tmp_path / "src" / "shop" / "requirements" ).mkdir()
+    (tmp_path / "src" / "shop" / "requirements" / "dev.txt").write_text("pytest\n")
+    (tmp_path / "src" / "shop" / "requirements" / "base.txt").write_text("fastapi\nsqlalchemy\n")
+    r = validate_fastapi_project(str(tmp_path))
+    assert r.entry_point == "src/shop/main.py"
+    assert r.dependency_file == "src/shop/requirements/base.txt"
+    assert r.isolation_ready
+
+
+def test_tool_only_pyproject_is_not_used_and_deps_are_inferred(tmp_path):
+    from unittest.mock import MagicMock
+
+    from app.isolation.docker_manager import INFERRED_REQUIREMENTS, DockerManager
+    from app.services.fastapi_validator import validate_fastapi_project
+
+    (tmp_path / "pyproject.toml").write_text("[tool.ruff]\nline-length = 100\n")
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app" / "main.py").write_text(
+        "from fastapi import FastAPI\nimport jwt\nfrom sqlalchemy import create_engine\nfrom app import helpers\napp = FastAPI()\n")
+    r = validate_fastapi_project(str(tmp_path))
+    assert r.entry_point == "app/main.py" and r.dependency_file is None and r.isolation_ready
+    DockerManager(client=MagicMock())._write_dockerfile(tmp_path, r.entry_point, r.dependency_file)
+    reqs = (tmp_path / INFERRED_REQUIREMENTS).read_text()
+    assert "fastapi" in reqs and "PyJWT" in reqs and "sqlalchemy" in reqs and "uvicorn" in reqs
+    assert f"-r {INFERRED_REQUIREMENTS}" in (tmp_path / "Dockerfile").read_text()

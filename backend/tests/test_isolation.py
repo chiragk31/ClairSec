@@ -147,7 +147,7 @@ class TestDockerfileGeneration:
             dependency_file="requirements.txt",
         )
         content = (tmp_path / "Dockerfile").read_text()
-        assert "COPY requirements.txt" in content
+        assert "pip install --no-cache-dir -r requirements.txt" in content
         assert "pip install" in content
         assert '"uvicorn", "main:app"' in content
 
