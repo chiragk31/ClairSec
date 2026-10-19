@@ -53,7 +53,10 @@ class _FirstRunWizardDialogState extends ConsumerState<FirstRunWizardDialog> {
       insetPadding: ClairInsets.xXlYXxl,
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 680, maxHeight: 600),
+          constraints: BoxConstraints(
+            maxWidth: 680,
+            maxHeight: (MediaQuery.sizeOf(context).height * 0.9).clamp(320.0, 600.0),
+          ),
           child: Container(
             decoration: BoxDecoration(
               color: tokens.surface,

@@ -149,7 +149,8 @@ class TestDockerfileGeneration:
         content = (tmp_path / "Dockerfile").read_text()
         assert "pip install --no-cache-dir -r requirements.txt" in content
         assert "pip install" in content
-        assert '"uvicorn", "main:app"' in content
+        assert "exec uvicorn main:app" in content
+        assert "cp -a /app/. /tmp/app/" in content  # runs from a writable copy (read-only image)
 
     def test_dockerfile_entry_point_converted_to_module(self, tmp_path):
         """src/api/app.py → --app-dir src/api app:app in uvicorn CMD (C9)."""
@@ -164,7 +165,7 @@ class TestDockerfileGeneration:
             dependency_file="requirements.txt",
         )
         content = (tmp_path / "Dockerfile").read_text()
-        assert '"uvicorn", "app:app", "--app-dir", "src/api"' in content
+        assert 'exec uvicorn app:app --app-dir src/api' in content
 
     def test_dockerfile_fallback_for_pyproject(self, tmp_path):
         """pyproject.toml → pip install . in fallback template."""
@@ -367,3 +368,19 @@ class TestDockerLifecycle:
         # After stop, logs should return not-found message (not raise)
         result = dm.get_logs(container_id)
         assert "not found" in result.lower() or isinstance(result, str)
+
+
+
+def test_container_runs_app_from_writable_tmpfs_copy(tmp_path):
+    """Apps that write next to their code (MontyDB, SQLite, uploads) used to crash on the
+    read-only root filesystem. The image stays read-only; the app runs from /tmp/app."""
+    from unittest.mock import MagicMock
+
+    from app.isolation.docker_manager import DockerManager
+
+    (tmp_path / "requirements.txt").write_text("fastapi\nmontydb\n")
+    DockerManager(client=MagicMock())._write_dockerfile(tmp_path, "main.py", "requirements.txt")
+    cmd = [l for l in (tmp_path / "Dockerfile").read_text().splitlines() if l.startswith("CMD")][0]
+    assert cmd.startswith('CMD ["sh", "-c", "')
+    assert "cd /tmp/app" in cmd and "PYTHONPATH=/tmp/app" in cmd and "HOME=/tmp" in cmd
+    assert "mkdir -p /tmp/clairsec-data /tmp/app" in cmd

@@ -102,7 +102,7 @@ class TestContainerHardeningUnit:
         assert call_kwargs["security_opt"] == ["no-new-privileges"]
         assert call_kwargs["pids_limit"] == settings.docker_pids_limit
         assert call_kwargs["read_only"] is True
-        assert call_kwargs["tmpfs"] == {"/tmp": "rw,noexec,nosuid,size=64m"}
+        assert call_kwargs["tmpfs"] == {"/tmp": "rw,noexec,nosuid,size=256m"}
         assert call_kwargs["environment"] == {}, "No host environment variables permitted (C3.5)"
 
     def test_no_docker_socket_mounted(self, mock_docker):

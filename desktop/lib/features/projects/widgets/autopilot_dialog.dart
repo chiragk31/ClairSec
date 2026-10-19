@@ -131,7 +131,12 @@ class _AutopilotDialogState extends ConsumerState<AutopilotDialog> {
         side: BorderSide(color: tokens.border),
       ),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 580),
+        // Never taller than the visible window: the body scrolls instead of
+        // overflowing at the bottom (small windows, presenter text, long errors).
+        constraints: BoxConstraints(
+          maxWidth: 580,
+          maxHeight: MediaQuery.sizeOf(context).height * 0.85,
+        ),
         child: Padding(
           padding: const EdgeInsets.all(ClairSpacing.xl),
           child: Column(
@@ -141,19 +146,24 @@ class _AutopilotDialogState extends ConsumerState<AutopilotDialog> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Row(
-                    children: [
-                      Icon(Icons.bolt, color: tokens.accent, size: 22),
-                      const SizedBox(width: ClairSpacing.xs),
-                      Text(
-                        'Autopilot — Full Security Check',
-                        style: TextStyle(
-                          fontSize: ClairTypography.h2,
-                          fontWeight: FontWeight.w700,
-                          color: tokens.textPrimary,
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Icon(Icons.bolt, color: tokens.accent, size: 22),
+                        const SizedBox(width: ClairSpacing.xs),
+                        Expanded(
+                          child: Text(
+                            'Autopilot — Full Security Check',
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: ClairTypography.h2,
+                              fontWeight: FontWeight.w700,
+                              color: tokens.textPrimary,
+                            ),
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                   IconButton(
                     onPressed: () => Navigator.of(context).pop(),
@@ -162,6 +172,12 @@ class _AutopilotDialogState extends ConsumerState<AutopilotDialog> {
                 ],
               ),
               const SizedBox(height: ClairSpacing.xs),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
               Text(
                 'Automated pipeline testing ${widget.project.name} safely inside container isolation.',
                 style: TextStyle(fontSize: ClairTypography.small, color: tokens.textSecondary),
@@ -198,6 +214,10 @@ class _AutopilotDialogState extends ConsumerState<AutopilotDialog> {
                   style: TextStyle(fontSize: ClairTypography.caption, color: tokens.critical),
                 ),
               ],
+                    ],
+                  ),
+                ),
+              ),
               const SizedBox(height: ClairSpacing.lg),
               Divider(height: 1, color: tokens.border),
               const SizedBox(height: ClairSpacing.md),

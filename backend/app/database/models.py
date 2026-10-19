@@ -288,6 +288,8 @@ class PipelineRecord(BaseModel):
     current_stage: PipelineStage = PipelineStage.IMPORT
     stages: dict[str, PipelineStageInfo] = Field(default_factory=dict)
     import_job_id: str | None = None
+    # The GitHub import request, kept so a resumed pipeline can redo the import.
+    git_import: dict | None = None
     isolation_job_id: str | None = None
     scan_id: str | None = None
     error: str | None = None

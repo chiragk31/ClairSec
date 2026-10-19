@@ -140,10 +140,37 @@ class _ImportProjectDialogState extends ConsumerState<ImportProjectDialog> {
       );
 
       final projectId = importRes['project_id'] as String;
-      final rawNotes = importRes['import_notes'];
+      final jobId = importRes['job_id'] as String?;
+
+      // Wait for the REAL import job (download, extraction, validation) instead of
+      // marking every step done immediately: the project only exists once it finishes.
+      setState(() => _steps = [
+            const StepData(title: 'Checking URL', status: CsStepStatus.completed),
+            const StepData(title: 'Fetching repository', plainLanguage: 'Downloading and checking the archive', status: CsStepStatus.running),
+            const StepData(title: 'Extracting files', status: CsStepStatus.pending),
+            const StepData(title: 'Validating FastAPI application', status: CsStepStatus.pending),
+            const StepData(title: 'Ready', status: CsStepStatus.pending),
+          ]);
+      if (jobId != null) {
+        for (var i = 0; i < 600; i++) {
+          final job = await service.getJob(jobId);
+          final status = (job['status'] ?? '').toString();
+          if (status == 'completed' || status == 'succeeded') break;
+          if (status == 'failed' || status == 'cancelled' || status == 'interrupted') {
+            throw Exception((job['error'] ?? 'Import $status').toString());
+          }
+          await Future<void>.delayed(const Duration(milliseconds: 700));
+          if (!mounted) return;
+        }
+      }
+      final project = await service.getProjectJson(projectId);
+      if ((project['validation_status'] ?? '') != 'valid') {
+        final errs = (project['validation_errors'] as List? ?? const []).join('; ');
+        throw Exception('Downloaded, but not a runnable FastAPI project: $errs');
+      }
+      final rawNotes = project['import_notes'] ?? importRes['import_notes'];
       final notesList = rawNotes is List ? rawNotes.map((n) => n.toString()).toList() : <String>[];
 
-      // Update progress simulation / polling
       setState(() {
         _importNotes = notesList;
         _steps = [
@@ -206,7 +233,10 @@ class _ImportProjectDialogState extends ConsumerState<ImportProjectDialog> {
         side: BorderSide(color: tokens.border),
       ),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 640, maxHeight: 720),
+        constraints: BoxConstraints(
+          maxWidth: 640,
+          maxHeight: (MediaQuery.sizeOf(context).height * 0.9).clamp(320.0, 720.0),
+        ),
         child: Padding(
           padding: const EdgeInsets.all(ClairSpacing.xl),
           child: Column(

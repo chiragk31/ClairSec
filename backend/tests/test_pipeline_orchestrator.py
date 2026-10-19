@@ -270,3 +270,14 @@ async def test_autopilot_runs_real_scan_and_report_for_demo_project():
     done = await orch.get_pipeline(pipeline.id)
     assert done.status == PipelineStatus.COMPLETED, {k: (v.status, v.error) for k, v in done.stages.items()}
     assert done.scan_id and done.report_id
+
+
+@pytest.mark.asyncio
+async def test_git_pipeline_never_keeps_a_stale_project_id(orchestrator):
+    """GitHub-import pipelines get their project from the import, never a caller-supplied id,
+    and keep the import request so a resumed pipeline can redo it."""
+    git = {"url": "https://github.com/o/r", "authorization_affirmed": True}
+    p = await orchestrator.create_pipeline(project_id="11111111-1111-4111-8111-111111111111", git_import_data=git)
+    assert p.project_id is None
+    assert p.git_import == git
+    assert p.stages[PipelineStage.IMPORT.value].status == "pending"

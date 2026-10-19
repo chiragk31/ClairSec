@@ -40,6 +40,18 @@ class ProjectsService {
     return Map<String, dynamic>.from(response.data);
   }
 
+  /// Status of a background job (e.g. a GitHub import) — `GET /api/jobs/{id}`.
+  Future<Map<String, dynamic>> getJob(String jobId) async {
+    final response = await apiClient.get('/api/jobs/$jobId');
+    return (response.data as Map).cast<String, dynamic>();
+  }
+
+  /// One project record — `GET /api/projects/{id}`.
+  Future<Map<String, dynamic>> getProjectJson(String projectId) async {
+    final response = await apiClient.get('/api/projects/$projectId');
+    return (response.data as Map).cast<String, dynamic>();
+  }
+
   Future<Map<String, dynamic>> getProjectTree(String projectId, {int depth = 3}) async {
     final response = await apiClient.get('/api/projects/$projectId/tree?depth=$depth');
     return Map<String, dynamic>.from(response.data);

@@ -86,8 +86,14 @@ class PipelineOrchestrator:
             stages[PipelineStage.IMPORT.value].status = "completed"
             stages[PipelineStage.IMPORT.value].line = "Project already imported"
 
+        if git_import_data:
+            # The import creates the project, so a caller-supplied project_id would be
+            # stale and could send isolate/scan to the wrong project.
+            project_id = None
+
         pipeline = PipelineRecord(
             project_id=project_id,
+            git_import=dict(git_import_data) if git_import_data else None,
             status=PipelineStatus.PENDING,
             current_stage=PipelineStage.ISOLATE if (project_id and not git_import_data) else PipelineStage.IMPORT,
             stages=stages,
@@ -187,6 +193,7 @@ class PipelineOrchestrator:
 
         pipeline.status = PipelineStatus.RUNNING
         await self._pipeline_repo.update(pipeline)
+        git_import_data = git_import_data or pipeline.git_import
 
         try:
             # ── 1. IMPORT STAGE ──────────────────────────────────────────────
@@ -277,6 +284,14 @@ class PipelineOrchestrator:
                 if not j or j.status == JobStatus.FAILED:
                     raise ValueError(j.error if j else "Import job failed")
                 if j.status == JobStatus.COMPLETED:
+                    imported = await self._project_repo.get_by_id(project.id)
+                    if imported is None:
+                        raise ValueError(f"Imported project {project.id} disappeared.")
+                    if str(getattr(imported.validation_status, "value", imported.validation_status)) != "valid":
+                        raise ValueError(
+                            "The repository was downloaded but is not a runnable FastAPI project: "
+                            + "; ".join(imported.validation_errors or ["no FastAPI app found"])
+                        )
                     break
                 if j.status == JobStatus.CANCELLED:
                     stage_info.status = "cancelled"
@@ -405,8 +420,14 @@ class PipelineOrchestrator:
         )
 
         try:
+            if not pipeline.project_id:
+                raise ValueError("Pipeline has no project to scan (the import did not complete).")
             scan_service = ScanService(self._db)
-            scan = await scan_service.submit_scan(pipeline.project_id or "")
+            scan = await scan_service.submit_scan(pipeline.project_id)
+            if scan.project_id != pipeline.project_id:
+                raise ValueError(
+                    f"Scan {scan.id} belongs to project {scan.project_id}, not {pipeline.project_id}."
+                )
             pipeline.scan_id = scan.id
             await self._pipeline_repo.update(pipeline)
 

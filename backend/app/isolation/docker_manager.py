@@ -370,10 +370,11 @@ class DockerManager:
         if "/" in entry_posix:
             app_dir, bare_filename = entry_posix.rsplit("/", 1)
             bare_module = bare_filename.removesuffix(".py")
-            cmd_directive = f'CMD ["uvicorn", "{bare_module}:app", "--app-dir", "{app_dir}", "--host", "0.0.0.0", "--port", "{port}"]'
+            uvicorn_args = f"{bare_module}:app --app-dir {app_dir} --host 0.0.0.0 --port {port}"
         else:
             bare_module = entry_posix.removesuffix(".py")
-            cmd_directive = f'CMD ["uvicorn", "{bare_module}:app", "--host", "0.0.0.0", "--port", "{port}"]'
+            uvicorn_args = f"{bare_module}:app --host 0.0.0.0 --port {port}"
+        cmd_directive = _writable_cmd(uvicorn_args)
 
         user_directive = ""
         if settings.docker_non_root:
@@ -656,7 +657,9 @@ class DockerManager:
         else:
             net = self.ensure_target_network(project_id)
 
-        tmpfs_config = {"/tmp": "rw,noexec,nosuid,size=64m"} if settings.docker_read_only else None
+        # /tmp is the only writable place; the app runs from a copy in it (see _writable_cmd),
+        # so it needs room for the project plus whatever the app writes (SQLite, MontyDB...).
+        tmpfs_config = {"/tmp": "rw,noexec,nosuid,size=256m"} if settings.docker_read_only else None
 
         container_env = dict(environment) if environment else {}
         env_keys = sorted(list(container_env.keys()))
@@ -1215,3 +1218,25 @@ def write_inferred_requirements(workspace_path: Path) -> str:
     logger.info("Inferred %d dependency(ies) for %s: %s", len(found), workspace_path, sorted(found),
                 extra={"event": "dependency.file.inferred"})
     return INFERRED_REQUIREMENTS
+
+
+# Name of the writable working copy inside the container.
+SANDBOX_RUN_DIR = "/tmp/app"
+
+
+def _writable_cmd(uvicorn_args: str) -> str:
+    """
+    CMD that keeps the root filesystem read-only (THREAT_MODEL C3.2) yet lets the app write.
+
+    Many real projects write next to their code: SQLite files, MontyDB/TinyDB folders,
+    uploads, caches. On the read-only image they crashed at startup. The container
+    therefore copies /app into the writable tmpfs at /tmp/app and runs from there, so
+    relative writes land in throwaway memory and the image itself is never modified.
+    """
+    script = (
+        f"mkdir -p {settings.docker_sqlite_data_dir} {SANDBOX_RUN_DIR} && "
+        f"cp -a /app/. {SANDBOX_RUN_DIR}/ && cd {SANDBOX_RUN_DIR} && "
+        f"export HOME=/tmp PYTHONPATH={SANDBOX_RUN_DIR} && "
+        f"exec uvicorn {uvicorn_args}"
+    )
+    return 'CMD ["sh", "-c", "' + script.replace('"', '\\"') + '"]'
